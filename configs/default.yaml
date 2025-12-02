@@ -1,0 +1,25 @@
+{
+  "paths": {
+    "raw_data": "../data.csv",
+    "processed_dir": "../data/processed",
+    "intermediate_dir": "../data/intermediate",
+    "prompts_dir": "../prompts"
+  },
+  "pipeline": {
+    "generators": [
+      {"name": "echo"}
+    ],
+    "judges": [
+      {"name": "heuristic"}
+    ],
+    "ranking": {
+      "top_k": 1,
+      "bottom_k": 1
+    },
+    "output_files": {
+      "samples": "../data/processed/samples.jsonl",
+      "judge_results": "../data/processed/judge_results.jsonl",
+      "ranked_pairs": "../data/processed/ranked_pairs.jsonl"
+    }
+  }
+}
