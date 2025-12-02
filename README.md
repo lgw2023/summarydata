@@ -92,6 +92,75 @@ project_root/
   requirements.txt / pyproject.toml
 ````
 
+### 1.3 模型与环境变量配置（`.env`）
+
+本项目推荐使用 `.env` 文件统一管理各类模型与代理配置，并通过 `python-dotenv` 在代码中加载。
+
+- **安装依赖**
+
+```bash
+pip install python-dotenv
+```
+
+- **`.env` 示例（请勿提交到仓库，`*` 处替换为你自己的真实密钥）**
+
+```env
+# 闭源 SOTA 模型（Claude，经 DeepInfra OpenAI 兼容接口）
+LLM_MODEL_CLAUDE_URL=https://api.deepinfra.com/v1/openai
+LLM_MODEL_CLAUDE_NAME=anthropic/claude-4-sonnet
+LLM_MODEL_CLAUDE_API_KEY=************
+
+# 开源 SOTA 模型（Qwen，经 DeepInfra OpenAI 兼容接口）
+# 注意：下面两个 Qwen 的变量名在示例中是相同的，实际使用时建议为不同模型采用不同变量名，避免覆盖。
+LLM_MODEL_QWEN235_NAME=Qwen/Qwen3-235B-A22B-Instruct-2507
+LLM_MODEL_QWEN235_URL=https://api.deepinfra.com/v1/openai
+LLM_MODEL_QWEN235_API_KEY=************
+
+LLM_MODEL_QWEN235_NAME=Qwen/Qwen3-Next-80B-A3B-Instruct
+LLM_MODEL_QWEN235_URL=https://api.deepinfra.com/v1/openai
+LLM_MODEL_QWEN235_API_KEY=************
+
+# DeepSeek 模型
+LLM_MODEL_DSCHAT_URL=https://api.deepseek.com
+LLM_MODEL_DSCHAT_NAME=deepseek-chat
+LLM_MODEL_DSCHAT_API_KEY=sk-************
+
+LLM_MODEL_DSREASON_URL=https://api.deepseek.com
+LLM_MODEL_DSREASON_NAME=deepseek-reason
+LLM_MODEL_DSREASON_API_KEY=sk-************
+
+# 实验模型 qwq-32b-preview（阿里 DashScope 兼容 OpenAI 接口）
+LLM_MODEL_QWQ32_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL_QWQ32_NAME=qwq-32b-preview
+LLM_MODEL_QWQ32_API_KEY=sk-************
+
+# 代理（可选）
+https_proxy=http://127.0.0.1:7890
+http_proxy=http://127.0.0.1:7890
+```
+
+- **在代码中加载 `.env`（示例）**
+
+后续在 `src/generators` 或脚本中可以通过 `python-dotenv` 自动加载 `.env`，再用标准的 `os.getenv` 读取：
+
+```python
+from dotenv import load_dotenv
+import os
+
+# 默认会在当前工作目录查找 `.env` 并加载
+load_dotenv()
+
+CLAUDE_URL = os.getenv("LLM_MODEL_CLAUDE_URL")
+CLAUDE_NAME = os.getenv("LLM_MODEL_CLAUDE_NAME")
+CLAUDE_API_KEY = os.getenv("LLM_MODEL_CLAUDE_API_KEY")
+
+DSCHAT_URL = os.getenv("LLM_MODEL_DSCHAT_URL")
+DSCHAT_NAME = os.getenv("LLM_MODEL_DSCHAT_NAME")
+DSCHAT_API_KEY = os.getenv("LLM_MODEL_DSCHAT_API_KEY")
+
+# 代理通常由 `requests` / `httpx` 等客户端自动从环境变量 `http_proxy`/`https_proxy` 读取
+```
+
 ---
 
 ## 2. 数据与样本格式规范
