@@ -111,14 +111,13 @@ LLM_MODEL_CLAUDE_NAME=anthropic/claude-4-sonnet
 LLM_MODEL_CLAUDE_API_KEY=************
 
 # 开源 SOTA 模型（Qwen，经 DeepInfra OpenAI 兼容接口）
-# 注意：下面两个 Qwen 的变量名在示例中是相同的，实际使用时建议为不同模型采用不同变量名，避免覆盖。
 LLM_MODEL_QWEN235_NAME=Qwen/Qwen3-235B-A22B-Instruct-2507
 LLM_MODEL_QWEN235_URL=https://api.deepinfra.com/v1/openai
 LLM_MODEL_QWEN235_API_KEY=************
 
-LLM_MODEL_QWEN235_NAME=Qwen/Qwen3-Next-80B-A3B-Instruct
-LLM_MODEL_QWEN235_URL=https://api.deepinfra.com/v1/openai
-LLM_MODEL_QWEN235_API_KEY=************
+LLM_MODEL_QWEN80_NAME=Qwen/Qwen3-Next-80B-A3B-Instruct
+LLM_MODEL_QWEN80_URL=https://api.deepinfra.com/v1/openai
+LLM_MODEL_QWEN80_API_KEY=************
 
 # DeepSeek 模型
 LLM_MODEL_DSCHAT_URL=https://api.deepseek.com
