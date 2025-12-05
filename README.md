@@ -105,33 +105,38 @@ pip install python-dotenv
 - **`.env` 示例（请勿提交到仓库，`*` 处替换为你自己的真实密钥）**
 
 ```env
-# 闭源 SOTA 模型（Claude，经 DeepInfra OpenAI 兼容接口）
+# 闭源 SOTA 模型
 LLM_MODEL_CLAUDE_URL=https://api.deepinfra.com/v1/openai
 LLM_MODEL_CLAUDE_NAME=anthropic/claude-4-sonnet
-LLM_MODEL_CLAUDE_API_KEY=************
+LLM_MODEL_CLAUDE_API_KEY=
 
-# 开源 SOTA 模型（Qwen，经 DeepInfra OpenAI 兼容接口）
+# 开源 SOTA 模型
 LLM_MODEL_QWEN235_NAME=Qwen/Qwen3-235B-A22B-Instruct-2507
 LLM_MODEL_QWEN235_URL=https://api.deepinfra.com/v1/openai
-LLM_MODEL_QWEN235_API_KEY=************
+LLM_MODEL_QWEN235_API_KEY=
 
 LLM_MODEL_QWEN80_NAME=Qwen/Qwen3-Next-80B-A3B-Instruct
 LLM_MODEL_QWEN80_URL=https://api.deepinfra.com/v1/openai
-LLM_MODEL_QWEN80_API_KEY=************
+LLM_MODEL_QWEN80_API_KEY=
 
-# DeepSeek 模型
 LLM_MODEL_DSCHAT_URL=https://api.deepseek.com
 LLM_MODEL_DSCHAT_NAME=deepseek-chat
-LLM_MODEL_DSCHAT_API_KEY=sk-************
+LLM_MODEL_DSCHAT_API_KEY=
 
 LLM_MODEL_DSREASON_URL=https://api.deepseek.com
-LLM_MODEL_DSREASON_NAME=deepseek-reason
-LLM_MODEL_DSREASON_API_KEY=sk-************
+LLM_MODEL_DSREASON_NAME=deepseek-reasoner
+LLM_MODEL_DSREASON_API_KEY=
 
-# 实验模型 qwq-32b-preview（阿里 DashScope 兼容 OpenAI 接口）
+# Judge 模型
+LLM_MODEL_JUDGE_URL=https://api.bianxie.ai/v1
+LLM_MODEL_JUDGE_NAME=gpt-5-2025-08-07
+LLM_MODEL_JUDGE_API_KEY=
+
+# 实验模型 qwq-32b-preview
 LLM_MODEL_QWQ32_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_QWQ32_NAME=qwq-32b-preview
-LLM_MODEL_QWQ32_API_KEY=sk-************
+LLM_MODEL_QWQ32_API_KEY=
+
 
 # 代理（可选）
 https_proxy=http://127.0.0.1:7890
@@ -172,14 +177,14 @@ DSCHAT_API_KEY = os.getenv("LLM_MODEL_DSCHAT_API_KEY")
 
 `score_prompt.py` 主要用于“评估阶段”，与 `data.csv` 的映射关系如下：
 
-- **输入 query（input_data 基础）**：来自 `data.csv` 的 `典型query` 列；如果 `last_answer_phone` 不为空，则会把上一轮助手回复与当前提问按照对话模板拼接成多轮对话，组成 `input_data`。
+- **输入 query（input_data 基础）**：来自 `data.csv` 的 `query` 列；如果 `last_answer_phone` 不为空，则会把上一轮助手回复与当前提问按照对话模板拼接成多轮对话，组成 `input_data`。
 - **模块数据（modules_block）**：来自 `data`、`suggest`、`rag` 三列，这三列会被格式化为一个统一的模块数据文本块（带简单分区/标题），作为评估时的标准依据。
 - **已有参考回复（reference_answer）**：分别取自 `a_answer` 与 `b_answer` 两列；对于同一行样本，在固定 `input_data` 和 `modules_block` 的前提下，分别把 `a_answer` 和 `b_answer` 代入 `answer` 占位符，形成两份完整的评估提示词，供 LLM-as-judge 独立打分。
 - **标签（winner）**：表示在人工或规则判断下更优的一侧（如 `a` / `b`），可用于提供额外可视化信息，辅助人工抽检排序合理性。
 
 #### 2.1.2 `response_prompt.py`（回复生成提示词）
 
-`response_prompt.py` 用于“生成阶段”，定义了面向终端用户问答场景的系统提示词模板 `SYSTEMTs_PROMPT_PHONE_GENERAL`，其核心作用是：
+`response_prompt.py` 用于“生成阶段”，定义了面向终端用户问答场景的系统提示词模板 `SYSTEMT_PROMPT_PHONE_GENERAL`，其核心作用是：
 
 - **统一人设与回复策略**：将“小艺”健康管家的人设、语言风格、回答范围与安全边界等一次性固化在系统提示词中，保证不同模型、不同样本下回复风格一致。
 - **约定输入结构**：要求真实调用时按照以下模块化格式组织上下文：
@@ -189,7 +194,7 @@ DSCHAT_API_KEY = os.getenv("LLM_MODEL_DSCHAT_API_KEY")
   - `[课程库]`（候选课程列表及简要描述）；
   - `[对话历史]`（上一轮 user/assistant 对话）；
   - `[用户提问]`（当前轮用户 query）。
-- **用于采样候选回复**：在实际生成候选答案时，可以将 `SYSTEMTs_PROMPT_PHONE_GENERAL` 与按上述结构拼接好的上下文文本合并，作为生成模型的完整输入 prompt，对不同模型（实验模型/开源模型/闭源模型）进行采样，得到多样化的候选回复。
+- **用于采样候选回复**：在实际生成候选答案时，可以将 `SYSTEMT_PROMPT_PHONE_GENERAL` 与按上述结构拼接好的上下文文本合并，作为生成模型的完整输入 prompt，对不同模型（实验模型/开源模型/闭源模型）进行采样，得到多样化的候选回复。
 
 简而言之：`response_prompt.py` 负责“如何喂给模型信息并让它说人话”，`score_prompt.py` 负责“在统一上下文下如何评价这些回复好坏”。下文的 Excel/JSONL 规范可以理解为对这套 `data.csv` + `score_prompt.py` + `response_prompt.py` 方案的工程化抽象。
 
@@ -250,7 +255,6 @@ class RawSample:
       "gen_config": {
         "temperature": 0.7,
         "top_p": 0.9,
-        "max_tokens": 512
       }
     },
     {
@@ -442,7 +446,7 @@ class RawSample:
 - `GROUND_PROMPT_TPL`：Grounding/Consistency 评估提示词模板。
 - `STRUCT_PROMPT_TPL`：Structure/Policy 评估提示词模板。
 - 二者均通过 `{input_data}`、`{modules_block}`、`{answer}` 三个占位符接收实际内容：
-  - `{input_data}`：由 `data.csv` 中的 `典型query` 和可选的 `last_answer_phone` 按对话模板拼接而成。
+  - `{input_data}`：由 `data.csv` 中的 `query` 和可选的 `last_answer_phone` 按对话模板拼接而成。
   - `{modules_block}`：由 `data`、`suggest`、`rag` 三列格式化组合而成。
   - `{answer}`：传入 `answer`，形成待评估答案。
 
@@ -564,7 +568,10 @@ class RawSample:
 
 * [ ] `generate_responses.py`
 * [ ] `run_judge.py`
-* [ ] `analyze_scores.py`
+* [ ] `analyze_scores.py`（分析 judge 结果，输出统计与评分分布图）
+* [ ] `analyze_generated.py`（分析 `generated_responses.jsonl`，查看各模型回复长度与候选数量分布）
+* [ ] `inspect_rankings.py`（查看单个 sample 的排序结果）
+* [ ] `inspect_sample_full.py`（串联查看单个 sample 的原始数据、上下文、候选回复、judge 结果与排序）
 * [ ] `build_pairs.py`
 
 ---

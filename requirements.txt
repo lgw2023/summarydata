@@ -1,2 +1,17 @@
-# Optional dependencies; pipeline可直接运行
+# 核心依赖
 pyyaml
+httpx
+
+# 环境变量管理（.env）
+python-dotenv
+
+# 分析与可视化（可选但推荐）
+matplotlib
+pandas
+streamlit
+
+# Markdown 渲染
+markdown
+
+# 测试
+pytest
