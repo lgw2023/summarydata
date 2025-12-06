@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -352,6 +353,37 @@ def _convert_record_to_manual_rank_payload(
     }
 
 
+def _extract_zero_scored_sample_ids(
+    manual_rank_rows: Sequence[dict[str, Any]],
+) -> set[str]:
+    """
+    从 *_rank_manually.jsonl 中筛出「所有 manual_score 都为 0」的样本 ID 集合。
+    """
+    zero_ids: set[str] = set()
+    for rec in manual_rank_rows:
+        if not isinstance(rec, dict):
+            continue
+        sample_id = str(rec.get("sample_id") or "").strip()
+        manual_ranks = rec.get("manual_ranks")
+        if not sample_id or not isinstance(manual_ranks, list) or not manual_ranks:
+            continue
+
+        scores: list[float] = []
+        for item in manual_ranks:
+            if not isinstance(item, dict):
+                continue
+            try:
+                score = float(item.get("manual_score", 0))
+            except (TypeError, ValueError):
+                score = 0.0
+            scores.append(score)
+
+        if scores and all(score <= 0 for score in scores):
+            zero_ids.add(sample_id)
+
+    return zero_ids
+
+
 def run_pipeline(
     config_path: str | Path,
     raw_data_path: str | Path,
@@ -365,6 +397,8 @@ def run_pipeline(
     - generate：从原始数据构建样本 + 上下文，并生成候选回复，结果写入 JSONL；
     - judge：基于已生成的 samples.jsonl / generated_responses.jsonl 执行打分聚合；
     - rank：对上一阶段生成的 judge_results_kto.jsonl 按总分阈值自动生成 *_rank_manually.jsonl；
+    - patch：读取对应的 judge_results_kto_rank_manually.jsonl，找出人工打分全为 0 的样本，
+      自动回溯原始数据构建 patch.csv，并在 data/<raw>_patch 路径下重新跑 generate；
     - all（默认）：依次执行 generate → judge → rank，每个阶段完成后落盘，便于中断与续跑。
     """
     logger = logging.getLogger(__name__)
@@ -377,6 +411,72 @@ def run_pipeline(
     config = PipelineConfig.from_yaml(config_path, raw_data_path=raw_data_path)
     ensure_dir(config.processed_dir)
     ensure_dir(config.intermediate_dir)
+
+    # ==== Stage: patch ====
+    if stage == "patch":
+        judge_kto_path = config.processed_dir / "judge_results_kto.jsonl"
+        manual_rank_path = _build_manual_rank_output_path_from_source(judge_kto_path)
+        if not manual_rank_path.exists():
+            raise FileNotFoundError(
+                f"未找到人工打分文件：{manual_rank_path}。请先完成 rank 阶段。"
+            )
+
+        manual_rows = read_jsonl(manual_rank_path)
+        if not manual_rows:
+            raise ValueError(f"文件为空或解析失败：{manual_rank_path}")
+
+        patch_sample_ids = _extract_zero_scored_sample_ids(manual_rows)
+        if not patch_sample_ids:
+            logger.info("未发现 manual_score 全为 0 的样本，跳过 patch。")
+            return
+
+        patch_run_name = f"{config.raw_data.stem}_patch"
+        patch_base_dir = PROJECT_ROOT / "data" / patch_run_name
+        patch_raw_data_path = patch_base_dir / "patch.csv"
+        ensure_dir(patch_raw_data_path.parent)
+
+        rows_to_write: list[dict[str, Any]] = []
+        with config.raw_data.open("r", encoding="utf-8") as f_in:
+            reader = csv.DictReader(f_in)
+            fieldnames = reader.fieldnames or []
+            fieldnames_with_id = list(fieldnames)
+            if "sample_id" not in fieldnames_with_id:
+                fieldnames_with_id = ["sample_id"] + fieldnames_with_id
+
+            for idx, row in enumerate(reader):
+                sid = row.get("sample_id") or str(idx + 1)
+                if sid in patch_sample_ids:
+                    row_out = dict(row)
+                    row_out["sample_id"] = sid
+                    rows_to_write.append(row_out)
+
+        if not rows_to_write:
+            logger.warning(
+                "在原始数据 %s 中未找到需要 patch 的样本，目标 ID：%s",
+                config.raw_data,
+                ", ".join(sorted(patch_sample_ids)),
+            )
+            return
+
+        with patch_raw_data_path.open("w", encoding="utf-8", newline="") as f_out:
+            writer = csv.DictWriter(f_out, fieldnames=fieldnames_with_id)
+            writer.writeheader()
+            for row in rows_to_write:
+                writer.writerow(row)
+
+        logger.info(
+            "构建 patch 数据集完成：写入 %s，样本数=%d",
+            patch_raw_data_path,
+            len(rows_to_write),
+        )
+        logger.info("开始针对 patch 数据集重新执行 generate 阶段...")
+        run_pipeline(
+            config_path=config_path,
+            raw_data_path=patch_raw_data_path,
+            stage="generate",
+            max_rows=max_rows,
+        )
+        return
 
     # ==== Stage: generate ====
     if stage in ("all", "generate"):
@@ -584,9 +684,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--stage",
-        choices=["all", "generate", "judge", "rank"],
+        choices=["all", "generate", "judge", "rank", "patch"],
         default="all",
-        help="Which stage of the pipeline to run (default: all).",
+        help="Which stage to run (all/generate/judge/rank/patch; default: all).",
     )
     parser.add_argument(
         "--max-rows",

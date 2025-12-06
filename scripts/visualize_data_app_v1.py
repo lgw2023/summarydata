@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+import markdown
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 
 def _inject_compact_radio_css() -> None:
@@ -422,7 +422,6 @@ def _fix_inline_bullet_lists(text: str) -> str:
     将“： - xxx”这类在同一行内的列表项拆成换行，
     便于 Markdown 正确识别为列表；避免改动代码块/表格行。
     """
-    return text
     lines: list[str] = []
     in_code_block = False
 
@@ -462,49 +461,43 @@ def _render_response_box(resp: str) -> None:
     """
     将模型回复渲染在类似“竖版手机屏幕比例（16:9）”的方框内。
 
-    改用前端 JS（marked.js）将 Markdown 转为 HTML，再放入固定比例的容器。
-    这样可以在需要时拓展更多前端交互（实时预览、富文本编辑等）。
-
-    额外处理：根据内容长度动态估算 iframe 高度，尽量减少被截断。
+    使用 python-markdown 将 Markdown 文本转为 HTML，然后包在一个固定比例的 div 里。
+    为了保证文本在框内滚动而不是撑开外层布局，增加 overflow-y: auto。
     """
-    fixed_resp = _fix_inline_bullet_lists(resp + "\n\n")
-    # 用 json.dumps 将文本安全地塞进 JS 字符串，避免引号/换行破坏脚本。
-    resp_js_literal = json.dumps(fixed_resp)
+    # 将 Markdown 转为 HTML。
+    # 开启 tables / fenced_code 等扩展，以便在方框内正确渲染表格等 GitHub 风格 Markdown。
+    fixed_resp = _fix_inline_bullet_lists(resp)
 
-    # 粗略估算行数（按 60 字一行），用于给组件一个近似高度，减少滚动/截断
-    lines = fixed_resp.splitlines()
-    approx_lines = sum(max(1, len(line) // 60 + 1) for line in lines) or 1
-    # 每行按 ~18px，高度范围 320–1400px 之间
-    est_height = min(1400, max(320, approx_lines * 18 + 240))
+    html_body = markdown.markdown(
+        fixed_resp,
+        extensions=[
+            "extra",       # 包含 tables、fenced_code 等常用扩展
+            "sane_lists",  # 更符合 GitHub 风格列表
+        ],
+    )
 
-    html = f"""
-<div id="resp-box" style="
+    st.markdown(
+        f"""
+<div style="
     border: 1px solid #dddddd;
     border-radius: 16px;
     padding: 16px 14px;
     margin: 8px 0 18px 0;
     width: 100%;
     max-width: 100%;
+    aspect-ratio: 9 / 16;  /* 竖版 16:9（宽:高=9:16） */
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
     background-color: #ffffff;
     overflow-y: auto;
     box-sizing: border-box;
-    min-height: 240px;
 ">
-  <div id="resp-content" style="font-size: 14px; line-height: 1.5; white-space: normal;"></div>
+  <div style="font-size: 14px; line-height: 1.5; white-space: normal;">
+    {html_body}
+  </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script>
-  const markdownString = {resp_js_literal};
-  const container = document.getElementById("resp-content");
-  if (container && window.marked) {{
-    container.innerHTML = marked.parse(markdownString);
-  }}
-</script>
-    """
-
-    # components.html 创建独立 iframe，用估算高度减少被截断；容器内部仍可滚动。
-    components.html(html, height=int(est_height), scrolling=False)
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _extract_non_full_checks_from_score(score_obj: dict[str, Any]) -> list[dict[str, Any]]:
