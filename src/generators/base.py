@@ -440,14 +440,28 @@ class ReferenceGenerator(BaseGenerator):
         reference_text = None
         if sample.reference_answers:
             if self._answer_key:
-                # 显式指定只使用某一列参考答案（如 a_answer 或 b_answer）
+                # 显式指定只使用某一列参考答案（如 a_answer / answer_phone）
                 reference_text = sample.reference_answers.get(self._answer_key)
             else:
-                # 未指定时，兼容旧逻辑：按固定顺序取第一条非空
-                for key in ("a_answer", "b_answer"):
-                    if key in sample.reference_answers and sample.reference_answers[key]:
-                        reference_text = sample.reference_answers[key]
+                # 兼容两种命名：旧(a_answer/b_answer) 与 新(answer_phone/think_phone)
+                fallback_orders = [
+                    ("a_answer", "b_answer"),
+                    ("answer_phone", "think_phone"),
+                ]
+                for keys in fallback_orders:
+                    for key in keys:
+                        val = sample.reference_answers.get(key)
+                        if val:
+                            reference_text = val
+                            break
+                    if reference_text:
                         break
+                # 若以上都为空，但 reference_answers 里有其它字段，则取第一个非空值
+                if not reference_text:
+                    for val in sample.reference_answers.values():
+                        if val:
+                            reference_text = val
+                            break
 
         if not reference_text:
             reference_text = "（无参考答案）"
