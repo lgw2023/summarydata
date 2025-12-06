@@ -1,0 +1,120 @@
+pipeline:
+  generators:
+    # 实验模型（例如 qwq-32b-preview，经 DashScope OpenAI 兼容接口）
+    - name: experimental
+      model_name: "qwq-32b-preview"
+      base_url_env: "LLM_MODEL_QWQ32_URL"
+      api_key_env: "LLM_MODEL_QWQ32_API_KEY"
+      # temperature: 0.7
+      # top_p: 0.9
+      # max_tokens: 512
+
+    # 开源 SOTA 模型（例如 Qwen3 系列，经 DeepInfra / DeepSeek / DashScope OpenAI 兼容接口）
+    # - Qwen3-235B（通过 .env 中的 LLM_MODEL_QWEN235_* 配置）
+    - name: open_source
+      model_name: "qwen3-235b-a22b-instruct-2507"
+      base_url_env: "LLM_MODEL_QWEN235_URL"
+      api_key_env: "LLM_MODEL_QWEN235_API_KEY"
+      # temperature: 0.7
+      # top_p: 0.9
+      # max_tokens: 512
+
+    # - Qwen3-Next-80B（通过 .env 中的 LLM_MODEL_QWEN80_* 配置）
+    - name: open_source
+      model_name: "Qwen/Qwen3-Next-80B-A3B-Instruct"
+      base_url_env: "LLM_MODEL_QWEN80_URL"
+      api_key_env: "LLM_MODEL_QWEN80_API_KEY"
+      # temperature: 0.7
+      # top_p: 0.9
+      # max_tokens: 512
+
+    # - Qwen3-32B（通过 .env 中的 LLM_MODEL_QWEN32_* 配置，经 DashScope OpenAI 兼容接口）
+    - name: open_source
+      model_name: "qwen3-32b"
+      base_url_env: "LLM_MODEL_QWEN32_URL"
+      api_key_env: "LLM_MODEL_QWEN32_API_KEY"
+      # temperature: 0.7
+      # top_p: 0.9
+      # max_tokens: 512
+
+    # - Qwen3-30B-A3B（通过 .env 中的 LLM_MODEL_QWEN30_* 配置，经 DashScope OpenAI 兼容接口）
+    - name: open_source
+      model_name: "qwen3-30b-a3b"
+      base_url_env: "LLM_MODEL_QWEN30_URL"
+      api_key_env: "LLM_MODEL_QWEN30_API_KEY"
+      # temperature: 0.7
+      # top_p: 0.9
+      # max_tokens: 512
+
+    # - DeepSeek-Chat（对话模型，通过 .env 中的 LLM_MODEL_DSCHAT_* 配置）
+    - name: open_source
+      model_name: "deepseek-chat"
+      base_url_env: "LLM_MODEL_DSCHAT_URL"
+      api_key_env: "LLM_MODEL_DSCHAT_API_KEY"
+      # temperature: 0.7
+      # top_p: 0.9
+      # max_tokens: 512
+
+    # - DeepSeek-Reasoner（推理模型，也作为开源候选之一，通过 .env 中的 LLM_MODEL_DSREASON_* 配置）
+    - name: open_source
+      model_name: "deepseek-reasoner"
+      base_url_env: "LLM_MODEL_DSREASON_URL"
+      api_key_env: "LLM_MODEL_DSREASON_API_KEY"
+      # temperature: 0.7
+      # top_p: 0.9
+      # max_tokens: 512
+
+    # 闭源 SOTA 模型（例如 Claude / QwenMax / Gemini，经 DeepInfra / DashScope OpenAI 兼容接口）
+    # - Claude（通过 .env 中的 LLM_MODEL_CLAUDE_* 配置，经 DeepInfra OpenAI 兼容接口）
+    - name: closed_source
+      model_name: "anthropic/claude-4-sonnet"
+      base_url_env: "LLM_MODEL_CLAUDE_URL"
+      api_key_env: "LLM_MODEL_CLAUDE_API_KEY"
+      # temperature: 0.7
+      # top_p: 0.9
+      # max_tokens: 512
+
+    # - QwenMax（通过 .env 中的 LLM_MODEL_QWENMAX_* 配置，经 DashScope OpenAI 兼容接口）
+    - name: closed_source
+      model_name: "qwen3-max"
+      base_url_env: "LLM_MODEL_QWENMAX_URL"
+      api_key_env: "LLM_MODEL_QWENMAX_API_KEY"
+      # temperature: 0.7
+      # top_p: 0.9
+      # max_tokens: 512
+
+    # - Gemini 2.5 Flash（通过 .env 中的 LLM_MODEL_GEMINI25_* 配置，经 DeepInfra OpenAI 兼容接口）
+    - name: closed_source
+      model_name: "google/gemini-2.5-flash"
+      base_url_env: "LLM_MODEL_GEMINI25_URL"
+      api_key_env: "LLM_MODEL_GEMINI25_API_KEY"
+      # temperature: 0.7
+      # top_p: 0.9
+      # max_tokens: 512
+
+    # 参考答案（从 answer_phone / think_phone 抽取，分别作为两条独立候选）
+    - name: reference
+      model_name: "ref_answer_phone"
+      answer_key: "answer_phone"
+
+    - name: reference
+      model_name: "ref_think_phone"
+      answer_key: "think_phone"
+
+  judges:
+    # 使用通用 LLM 作为 LLM-as-judge，模型与 endpoint 从 .env 读取
+    - name: llm
+      model_name_env: "gpt-5-mini-2025-08-07"
+      base_url_env: "LLM_MODEL_JUDGE_URL"
+      api_key_env: "LLM_MODEL_JUDGE_API_KEY"
+      # 提示词模板统一从 score_prompt.py 中的 GROUND_PROMPT_TPL / STRUCT_PROMPT_TPL 读取
+      timeout: 60
+      max_retries: 30
+      backoff_base: 1.0
+
+  ranking:
+    top_k: 1
+    bottom_k: 1
+    # 要求最高分和最低分至少差 12，才认为排序可信
+    min_score_diff: 12
+

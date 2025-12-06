@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -35,6 +36,14 @@ from src.utils.env import load_env
 
 # 默认的 judge 并发 worker 数（按样本/候选切分任务）
 DEFAULT_JUDGE_WORKERS = 16
+
+# generate 阶段增量写盘时，每批并行生成的样本数（通过环境变量可覆盖）
+try:
+    DEFAULT_GENERATE_BATCH_SIZE = max(
+        1, int(os.getenv("GENERATE_BATCH_SIZE", "16"))
+    )
+except ValueError:
+    DEFAULT_GENERATE_BATCH_SIZE = 16
 
 
 # ===== Gemini 2.5 特殊后处理：裁剪掉「思考过程」 =====
@@ -151,6 +160,9 @@ def _load_samples_from_jsonl(path: str | Path) -> list[Sample]:
     rows = read_jsonl(path_obj)
     if not rows:
         raise ValueError(f"Samples file {path_obj} is empty.")
+
+    logger = logging.getLogger(__name__)
+    logger.info("Loaded %d samples from existing file %s", len(rows), path_obj)
     return [Sample(**row) for row in rows]
 
 
@@ -167,9 +179,24 @@ def _load_candidates_from_jsonl(path: str | Path) -> list[Candidate]:
     if not rows:
         raise ValueError(f"Generated responses file {path_obj} is empty.")
 
-    candidates: list[Candidate] = []
+    # 若存在同一 sample_id 的多条记录（例如在增量生成、多次运行后），
+    # 优先使用**最后一条**，视为该样本的最新完整结果。
+    rows_by_sample_id: Dict[str, Dict] = {}
     for row in rows:
         sample_id = str(row.get("sample_id"))
+        if not sample_id:
+            continue
+        rows_by_sample_id[sample_id] = row
+
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "Loaded generated responses for %d samples from existing file %s",
+        len(rows_by_sample_id),
+        path_obj,
+    )
+
+    candidates: list[Candidate] = []
+    for sample_id, row in rows_by_sample_id.items():
         for cand in row.get("candidates", []):
             candidates.append(
                 Candidate(
@@ -186,8 +213,63 @@ def _load_candidates_from_jsonl(path: str | Path) -> list[Candidate]:
     return candidates
 
 
+def _load_completed_generated_rows(config: PipelineConfig) -> Dict[str, Dict]:
+    """
+    从已有的 generated_responses.jsonl 中筛选出「已完成所有当前配置生成器」的样本行。
+
+    设计原则：
+    - 仅当某个 sample_id 对所有当前 PipelineConfig.generators 中的 (model_type, model_name)
+      至少各有一条候选时，才认为该样本“已完成”，后续跑 generate 阶段时可以跳过重新生成；
+    - 若生成器配置发生变化（新增 / 删除模型，或修改 model_name），则旧结果不再视为完整，
+      会对对应样本重新生成，从而保证配置变更后结果不会“错误复用”；
+    - 对于此前中途失败、候选不全的样本，不会出现在返回结果里，后续会整条样本重新生成。
+    """
+    logger = logging.getLogger(__name__)
+    output_path = config.output_files.generated_responses
+    rows = read_jsonl(output_path)
+    if not rows:
+        return {}
+
+    # 针对可能存在的「同一 sample_id 多条记录」场景，保留**最后一条**作为最新结果。
+    latest_rows_by_id: Dict[str, Dict] = {}
+    for row in rows:
+        sample_id = str(row.get("sample_id"))
+        if not sample_id:
+            continue
+        latest_rows_by_id[sample_id] = row
+
+    # 根据当前配置构建一次 generator，仅用于拿到 (model_type, model_name) 组合。
+    generators = build_generators(config.generators)
+    if not generators:
+        return {}
+    expected_pairs = {(g.model_type, g.model_name) for g in generators}
+    if not expected_pairs:
+        return {}
+
+    completed: Dict[str, Dict] = {}
+    for sample_id, row in latest_rows_by_id.items():
+        candidates = row.get("candidates") or []
+        seen_pairs = {
+            (str(c.get("model_type")), str(c.get("model_name"))) for c in candidates
+        }
+        # 仅当所有当前配置的 (model_type, model_name) 都已出现时，视为该样本“完整”
+        if expected_pairs.issubset(seen_pairs):
+            completed[sample_id] = row
+    if completed:
+        sample_ids_preview = sorted(completed.keys())
+        logger.info(
+            "Loaded %d completed samples from existing generated_responses file %s. "
+            "Sample IDs:\n%s",
+            len(completed),
+            output_path,
+            ", ".join(sample_ids_preview),
+        )
+    return completed
+
+
 def run_pipeline(
     config_path: str | Path,
+    raw_data_path: str | Path,
     stage: str = "all",
     max_rows: int | None = 3,
 ) -> None:
@@ -201,8 +283,13 @@ def run_pipeline(
     - all（默认）：依次执行 generate → judge → rank，每个阶段完成后落盘，便于中断与续跑。
     """
     logger = logging.getLogger(__name__)
-    logger.info("Loading pipeline config from %s (stage=%s)", config_path, stage)
-    config = PipelineConfig.from_yaml(config_path)
+    logger.info(
+        "Loading pipeline config from %s (stage=%s, raw_data=%s)",
+        config_path,
+        stage,
+        raw_data_path,
+    )
+    config = PipelineConfig.from_yaml(config_path, raw_data_path=raw_data_path)
     ensure_dir(config.processed_dir)
     ensure_dir(config.intermediate_dir)
 
@@ -218,24 +305,92 @@ def run_pipeline(
         export_context_samples_jsonl(config.intermediate_dir, context_samples)
         context_lookup: Dict[str, str] = {cs.sample_id: cs.context for cs in context_samples}
 
-        # 3) 调用各类生成器生成候选回复，并导出统一结构的 generated_responses.jsonl
-        candidates = run_generation(samples, config.generators)
-        grouped_candidates: Dict[str, List[Candidate]] = defaultdict(list)
-        for c in candidates:
-            grouped_candidates[c.sample_id].append(c)
-
-        generated_rows = []
-        for sample in samples:
-            generated_rows.append(
-                {
-                    "sample_id": sample.sample_id,
-                    "context": context_lookup.get(sample.sample_id, ""),
-                    "question": sample.query,
-                    "candidates": [cand.to_dict() for cand in grouped_candidates.get(sample.sample_id, [])],
-                }
+        # 3) 断点续跑 + 实时写盘：
+        #    - 先从已有 generated_responses.jsonl 中识别出“已完成”的样本；
+        #    - 对未完成样本按批次调用原有的并行生成逻辑（run_generation）；
+        #    - 每个样本生成完一整批候选后立刻 append 写入 JSONL；
+        #    - 若本次运行中途被中断，下次重跑会自动跳过已完成样本，仅补齐缺失部分。
+        completed_rows_by_id = _load_completed_generated_rows(config)
+        completed_sample_ids = set(completed_rows_by_id.keys())
+        if completed_sample_ids:
+            logger.info(
+                "Detected %d completed samples from previous run in %s, "
+                "will skip regeneration for them.",
+                len(completed_sample_ids),
+                config.output_files.generated_responses,
             )
-        write_jsonl(config.output_files.generated_responses, generated_rows)
-        logger.info("Generated responses for %d samples", len(generated_rows))
+
+        # 仅对“未完成”的样本重新生成；完整样本后续 judge/rank 直接复用旧结果。
+        samples_to_generate: List[Sample] = [
+            s for s in samples if s.sample_id not in completed_sample_ids
+        ]
+
+        if not samples_to_generate:
+            logger.info(
+                "All %d samples already have completed generated responses for current config. "
+                "Nothing to regenerate.",
+                len(samples),
+            )
+        else:
+            output_path = config.output_files.generated_responses
+            ensure_dir(output_path.parent)
+
+            total_samples = len(samples)
+            reused_count = len(completed_sample_ids)
+            newly_generated_count = 0
+
+            batch_size = DEFAULT_GENERATE_BATCH_SIZE
+            logger.info(
+                "Starting incremental generation for %d samples (batch_size=%d, reused_from_previous_runs=%d)",
+                len(samples_to_generate),
+                batch_size,
+                reused_count,
+            )
+
+            # 采用 append 方式实时写盘：每处理完一批样本，就将这些样本的完整候选写入文件。
+            with Path(output_path).open("a", encoding="utf-8") as f:
+                for start in range(0, len(samples_to_generate), batch_size):
+                    batch = samples_to_generate[start : start + batch_size]
+                    try:
+                        batch_candidates = run_generation(batch, config.generators)
+                    except Exception as exc:  # pragma: no cover - 防御性日志
+                        logger.exception(
+                            "run_generation failed on batch starting at index %d: %r",
+                            start,
+                            exc,
+                        )
+                        continue
+
+                    grouped_candidates: Dict[str, List[Candidate]] = defaultdict(list)
+                    for cand in batch_candidates:
+                        grouped_candidates[cand.sample_id].append(cand)
+
+                    for sample in batch:
+                        sid = sample.sample_id
+                        per_sample_candidates = grouped_candidates.get(sid, [])
+                        if not per_sample_candidates:
+                            logger.warning(
+                                "No candidates generated for sample %s in current batch, skipping write for this sample.",
+                                sid,
+                            )
+                            continue
+
+                        row = {
+                            "sample_id": sid,
+                            "context": context_lookup.get(sid, ""),
+                            "question": sample.query,
+                            "candidates": [c.to_dict() for c in per_sample_candidates],
+                        }
+                        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+                        f.flush()
+                        newly_generated_count += 1
+
+            logger.info(
+                "Generation stage finished: total_samples=%d, newly_generated=%d, reused_from_previous_runs=%d",
+                total_samples,
+                newly_generated_count,
+                reused_count,
+            )
 
         # 如果只跑 generate，则直接返回；否则继续后续阶段。
         if stage == "generate":
@@ -299,7 +454,16 @@ def run_pipeline(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run end-to-end data generation and judging pipeline")
-    parser.add_argument("--config", default="configs/default.yaml", help="Path to YAML configuration file")
+    parser.add_argument(
+        "--config",
+        default="configs/default.yaml",
+        help="Path to YAML configuration file (模型与打分配置等，不再内置原始数据路径)",
+    )
+    parser.add_argument(
+        "--raw-data",
+        required=True,
+        help="本次实验的输入数据文件路径（例如 CSV/Excel），用于决定读取样本以及 data/<输入文件名>/ 下的输出目录",
+    )
     parser.add_argument(
         "--stage",
         choices=["all", "generate", "judge", "rank"],
@@ -320,4 +484,9 @@ if __name__ == "__main__":
     load_env()
     init_logger()
     args = parse_args()
-    run_pipeline(args.config, stage=args.stage, max_rows=args.max_rows)
+    run_pipeline(
+        args.config,
+        raw_data_path=args.raw_data,
+        stage=args.stage,
+        max_rows=args.max_rows,
+    )

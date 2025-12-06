@@ -36,7 +36,7 @@ def _judge_single(
     return judge.judge(sample, candidate)
 
 
-def run_judge(config_path: str | Path) -> None:
+def run_judge(config_path: str | Path, raw_data_path: str | Path) -> None:
     """
     仅执行「生成 + 评估」阶段。
 
@@ -45,8 +45,8 @@ def run_judge(config_path: str | Path) -> None:
     因此与 generate_responses.py 的输出在配置相同时是一致的。
     """
     logger = logging.getLogger(__name__)
-    logger.info("Loading config from %s", config_path)
-    config = PipelineConfig.from_yaml(config_path)
+    logger.info("Loading config from %s (raw_data=%s)", config_path, raw_data_path)
+    config = PipelineConfig.from_yaml(config_path, raw_data_path=raw_data_path)
 
     samples = SampleLoader(config.raw_data).load()
     logger.info("Loaded %d samples", len(samples))
@@ -96,7 +96,16 @@ def run_judge(config_path: str | Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run judge only (generation + scoring)")
-    parser.add_argument("--config", default="configs/default.yaml", help="Path to YAML configuration file")
+    parser.add_argument(
+        "--config",
+        default="configs/default.yaml",
+        help="Path to YAML configuration file (仅包含模型与打分配置等，不再固定原始数据路径)",
+    )
+    parser.add_argument(
+        "--raw-data",
+        required=True,
+        help="本次实验的输入数据文件路径（例如 CSV/Excel），用于决定读取样本以及 data/<输入文件名>/ 下的输出目录",
+    )
     return parser.parse_args()
 
 
@@ -104,6 +113,6 @@ if __name__ == "__main__":
     load_env()
     init_logger()
     args = parse_args()
-    run_judge(args.config)
+    run_judge(args.config, raw_data_path=args.raw_data)
 
 

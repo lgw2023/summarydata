@@ -17,10 +17,10 @@ from src.utils.logging_utils import init_logger
 from src.utils.env import load_env
 
 
-def run_build_pairs(config_path: str | Path) -> None:
+def run_build_pairs(config_path: str | Path, raw_data_path: str | Path) -> None:
     logger = logging.getLogger(__name__)
-    logger.info("Loading config from %s", config_path)
-    config = PipelineConfig.from_yaml(config_path)
+    logger.info("Loading config from %s (raw_data=%s)", config_path, raw_data_path)
+    config = PipelineConfig.from_yaml(config_path, raw_data_path=raw_data_path)
     raw_rows = read_jsonl(config.output_files.judge_results)
     judge_rows = flatten_grouped_scores(raw_rows)
     ranked = rank_candidates(judge_rows)
@@ -42,7 +42,16 @@ def run_build_pairs(config_path: str | Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build pos/neg pairs from judge_results.jsonl")
-    parser.add_argument("--config", default="configs/default.yaml", help="Path to YAML configuration file")
+    parser.add_argument(
+        "--config",
+        default="configs/default.yaml",
+        help="Path to YAML configuration file (仅包含排序与打分配置等，不再固定原始数据路径)",
+    )
+    parser.add_argument(
+        "--raw-data",
+        required=True,
+        help="本次实验的输入数据文件路径（例如 CSV/Excel），用于决定从哪个 data/<输入文件名>/ 目录读取 judge_results",
+    )
     return parser.parse_args()
 
 
@@ -50,6 +59,6 @@ if __name__ == "__main__":
     load_env()
     init_logger()
     args = parse_args()
-    run_build_pairs(args.config)
+    run_build_pairs(args.config, raw_data_path=args.raw_data)
 
 

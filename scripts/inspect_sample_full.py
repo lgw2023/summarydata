@@ -27,7 +27,7 @@ def _find_first(rows: List[Dict[str, Any]], sample_id: str) -> Dict[str, Any] | 
     return None
 
 
-def inspect_sample_full(config_path: str | Path, sample_id: str) -> None:
+def inspect_sample_full(config_path: str | Path, raw_data_path: str | Path, sample_id: str) -> None:
     """
     串联查看单个 sample 在各阶段的完整链路：
     - 原始样本（data.csv / Excel）
@@ -37,7 +37,7 @@ def inspect_sample_full(config_path: str | Path, sample_id: str) -> None:
     - 排序结果与正负样本位置
     """
     logger = logging.getLogger(__name__)
-    config = PipelineConfig.from_yaml(config_path)
+    config = PipelineConfig.from_yaml(config_path, raw_data_path=raw_data_path)
 
     # 1) 原始样本
     samples = SampleLoader(config.raw_data).load()
@@ -126,7 +126,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Inspect full pipeline information for a single sample_id"
     )
-    parser.add_argument("--config", default="configs/default.yaml", help="Path to YAML configuration file")
+    parser.add_argument(
+        "--config",
+        default="configs/default.yaml",
+        help="Path to YAML configuration file (用于模型与路径模板配置，不再固定原始数据文件)",
+    )
+    parser.add_argument(
+        "--raw-data",
+        required=True,
+        help="本次实验的输入数据文件路径（例如 CSV/Excel），用于确定 data/<输入文件名>/ 下的中间与输出文件",
+    )
     parser.add_argument("--sample-id", required=True, help="Sample ID to inspect")
     return parser.parse_args()
 
@@ -135,6 +144,6 @@ if __name__ == "__main__":
     load_env()
     init_logger()
     args = parse_args()
-    inspect_sample_full(args.config, args.sample_id)
+    inspect_sample_full(args.config, args.raw_data, args.sample_id)
 
 

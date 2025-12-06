@@ -468,6 +468,40 @@ def _extract_hit_checks_from_score(score_obj: dict[str, Any]) -> list[dict[str, 
     return hits
 
 
+def _default_manual_score_from_total_20(total_score_20: Any) -> int:
+    """
+    根据 total_score_20（0–20 分）推导人工打分默认值（0–5 分）。
+
+    约定映射：
+    - 20 分 -> 5 分
+    - 19–16 分 -> 4 分
+    - 15–14 分 -> 3 分
+    - 13–12 分 -> 2 分
+    - 1–11 分 -> 1 分
+    - 0 分或异常值 -> 0 分
+    """
+    try:
+        v = float(total_score_20)
+    except (TypeError, ValueError):
+        return 0
+
+    # 明确 0 分 单独为 0
+    if v <= 0:
+        return 0
+    if v >= 20:
+        # 理论上最大为 20，这里 >=20 都视作 20 分处理
+        return 5
+    if 16 <= v < 20:
+        return 4
+    if 14 <= v < 16:
+        return 3
+    if 12 <= v < 14:
+        return 2
+    if 0 < v < 12:
+        return 1
+    return 0
+
+
 def _render_non_full_checks_for_item(item: dict[str, Any]) -> None:
     """
     在候选回复方框下方展示“非满分”的检查项摘要。
@@ -642,12 +676,14 @@ def render_judge_results(
                     label_text = str(item.get("model_name") or cid_str)
                     key = f"manual_rank__{source_rel or ''}__{sample_id}__{cid_str}"
                     options = [5, 4, 3, 2, 1, 0]
+                    total_20 = item.get("total_score_20")
 
                     # 通过 session_state 统一控制默认值：
                     # - 若已有历史值（包括从 *_rank_manually.jsonl 恢复的），则直接使用；
-                    # - 若不存在，则初始化为 0 分，避免与 widget 自带默认值产生“双默认值”冲突。
+                    # - 若不存在，则基于 total_score_20 计算一个智能默认值，
+                    #   避免所有候选都从 0 分开始。
                     if key not in st.session_state:
-                        st.session_state[key] = 0
+                        st.session_state[key] = _default_manual_score_from_total_20(total_20)
                     else:
                         # 防御性地将已有值裁剪到 0–5 区间内
                         try:

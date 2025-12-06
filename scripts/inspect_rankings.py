@@ -17,9 +17,9 @@ from src.utils.logging_utils import init_logger
 from src.utils.env import load_env
 
 
-def inspect_sample(config_path: str | Path, sample_id: str) -> None:
+def inspect_sample(config_path: str | Path, raw_data_path: str | Path, sample_id: str) -> None:
     logger = logging.getLogger(__name__)
-    config = PipelineConfig.from_yaml(config_path)
+    config = PipelineConfig.from_yaml(config_path, raw_data_path=raw_data_path)
     raw_rows = read_jsonl(config.output_files.judge_results)
     rows = flatten_grouped_scores(raw_rows)
     ranked = rank_candidates(rows)
@@ -36,7 +36,16 @@ def inspect_sample(config_path: str | Path, sample_id: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Inspect ranking result for a specific sample_id")
-    parser.add_argument("--config", default="configs/default.yaml", help="Path to YAML configuration file")
+    parser.add_argument(
+        "--config",
+        default="configs/default.yaml",
+        help="Path to YAML configuration file (用于排序与打分配置，不再固定原始数据文件)",
+    )
+    parser.add_argument(
+        "--raw-data",
+        required=True,
+        help="本次实验的输入数据文件路径（例如 CSV/Excel），用于确定 data/<输入文件名>/ 下的 judge_results.jsonl",
+    )
     parser.add_argument("--sample-id", required=True, help="Sample ID to inspect")
     return parser.parse_args()
 
@@ -45,6 +54,6 @@ if __name__ == "__main__":
     load_env()
     init_logger()
     args = parse_args()
-    inspect_sample(args.config, args.sample_id)
+    inspect_sample(args.config, args.raw_data, args.sample_id)
 
 

@@ -164,7 +164,7 @@ class _OpenAIChatGenerator(BaseGenerator):
             {"role": "user", "content": user_content},
         ]
 
-    def _call_llm(self, messages: List[Dict[str, str]]) -> str:
+    def _call_llm(self, messages: List[Dict[str, str]], sample_id: str | None = None) -> str:
         """
         调用 OpenAI 兼容接口并返回模型输出文本。
 
@@ -222,8 +222,9 @@ class _OpenAIChatGenerator(BaseGenerator):
             try:
                 # 每一次底层 LLM HTTP 调用开始时输出反馈，便于在 pipeline 中观察进度
                 # self._logger.info(
-                #     "LLM generate call start | model=%s | attempt=%d/%d",
+                #     "LLM generate call start | model=%s | sample_id=%s | attempt=%d/%d",
                 #     self.model_name,
+                #     sample_id or "<unknown>",
                 #     attempt + 1,
                 #     self._max_retries + 1,
                 # )
@@ -259,8 +260,9 @@ class _OpenAIChatGenerator(BaseGenerator):
                 duration = time.time() - start_ts
                 # 每一次 LLM 调用成功后的反馈日志
                 self._logger.info(
-                    "LLM generate call success | model=%s | attempt=%d/%d | elapsed=%.2fs | content_len=%d",
+                    "LLM generate call success | model=%s | sample_id=%s | attempt=%d/%d | elapsed=%.2fs | content_len=%d",
                     self.model_name,
+                    sample_id or "<unknown>",
                     attempt + 1,
                     self._max_retries + 1,
                     duration,
@@ -344,7 +346,7 @@ class _OpenAIChatGenerator(BaseGenerator):
           因此此处不再向外抛出异常，保证逐条样本生成的健壮性。
         """
         messages = self._build_messages(sample)
-        return self._call_llm(messages)
+        return self._call_llm(messages, sample_id=str(sample.sample_id))
 
 
 class ExperimentalGenerator(_OpenAIChatGenerator):

@@ -204,3 +204,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+.DS_Store
+/data
+/data
+generated_responses.jsonl.bak
+summary_train_v3.xlsx

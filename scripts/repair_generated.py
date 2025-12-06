@@ -44,7 +44,7 @@ def _needs_regeneration(response_text: str) -> bool:
     return False
 
 
-def run_repair_generated(config_path: str | Path) -> None:
+def run_repair_generated(config_path: str | Path, raw_data_path: str | Path) -> None:
     """
     针对已生成的 generated_responses.jsonl 做一次“补洞”：
 
@@ -53,8 +53,8 @@ def run_repair_generated(config_path: str | Path) -> None:
     - 将新生成的候选补写回原有 generated_responses.jsonl 中（原文件会被整体覆盖写入）。
     """
     logger = logging.getLogger(__name__)
-    logger.info("Loading pipeline config from %s", config_path)
-    config = PipelineConfig.from_yaml(config_path)
+    logger.info("Loading pipeline config from %s (raw_data=%s)", config_path, raw_data_path)
+    config = PipelineConfig.from_yaml(config_path, raw_data_path=raw_data_path)
 
     # 1) 加载原始样本与现有 generated_responses 结果
     samples = SampleLoader(config.raw_data).load()
@@ -171,7 +171,16 @@ def parse_args() -> argparse.Namespace:
             "re-generating candidates only where needed."
         )
     )
-    parser.add_argument("--config", default="configs/default.yaml", help="Path to YAML configuration file")
+    parser.add_argument(
+        "--config",
+        default="configs/default.yaml",
+        help="Path to YAML configuration file (仅包含生成器配置等，不再固定原始数据路径)",
+    )
+    parser.add_argument(
+        "--raw-data",
+        required=True,
+        help="本次实验的输入数据文件路径（例如 CSV/Excel），用于决定从哪个 data/<输入文件名>/ 目录读取与写回 generated_responses.jsonl",
+    )
     return parser.parse_args()
 
 
@@ -179,6 +188,6 @@ if __name__ == "__main__":
     load_env()
     init_logger()
     args = parse_args()
-    run_repair_generated(args.config)
+    run_repair_generated(args.config, raw_data_path=args.raw_data)
 
 

@@ -20,10 +20,10 @@ from src.utils.logging_utils import init_logger
 from src.utils.env import load_env
 
 
-def run_generate(config_path: str | Path) -> None:
+def run_generate(config_path: str | Path, raw_data_path: str | Path) -> None:
     logger = logging.getLogger(__name__)
-    logger.info("Loading config from %s", config_path)
-    config = PipelineConfig.from_yaml(config_path)
+    logger.info("Loading config from %s (raw_data=%s)", config_path, raw_data_path)
+    config = PipelineConfig.from_yaml(config_path, raw_data_path=raw_data_path)
 
     samples = SampleLoader(config.raw_data).load()
     logger.info("Loaded %d samples", len(samples))
@@ -56,7 +56,16 @@ def run_generate(config_path: str | Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate responses only")
-    parser.add_argument("--config", default="configs/default.yaml", help="Path to YAML configuration file")
+    parser.add_argument(
+        "--config",
+        default="configs/default.yaml",
+        help="Path to YAML configuration file (仅包含模型与生成配置等，不再固定原始数据路径)",
+    )
+    parser.add_argument(
+        "--raw-data",
+        required=True,
+        help="本次实验的输入数据文件路径（例如 CSV/Excel），用于决定读取样本以及 data/<输入文件名>/ 下的输出目录",
+    )
     return parser.parse_args()
 
 
@@ -64,6 +73,6 @@ if __name__ == "__main__":
     load_env()
     init_logger()
     args = parse_args()
-    run_generate(args.config)
+    run_generate(args.config, raw_data_path=args.raw_data)
 
 
