@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cProfile import label
+import re
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
@@ -54,17 +55,25 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
 
 
-def find_data_files() -> List[Path]:
-    """递归查找 data/ 目录下的所有 JSON/JSONL 文件。"""
+def list_dataset_dirs() -> List[Path]:
+    """列出 data/ 下的一级子目录，用于数据集选择。"""
     if not DATA_DIR.exists():
         return []
+    return sorted([p for p in DATA_DIR.iterdir() if p.is_dir()], key=lambda p: p.name.lower())
 
-    jsonl_files = list(DATA_DIR.rglob("*.jsonl"))
-    json_files = list(DATA_DIR.rglob("*.json"))
+
+def find_data_files(base_dir: Path | None = None) -> List[Path]:
+    """递归查找指定目录（默认 data/）下的所有 JSON/JSONL 文件。"""
+    target_dir = base_dir or DATA_DIR
+    if not target_dir.exists():
+        return []
+
+    jsonl_files = list(target_dir.rglob("*.jsonl"))
+    json_files = list(target_dir.rglob("*.json"))
 
     all_files = jsonl_files + json_files
     # 按相对路径排序，方便浏览
-    return sorted(all_files, key=lambda p: str(p.relative_to(DATA_DIR)))
+    return sorted(all_files, key=lambda p: str(p.relative_to(target_dir)))
 
 
 def load_records(path: Path) -> List[Any]:
@@ -269,37 +278,117 @@ def render_candidates(candidates: list[dict[str, Any]]) -> None:
 
 
 @st.cache_data(show_spinner=False)
-def load_generated_response_index() -> Dict[str, str]:
+def load_generated_response_index(source_rel: str | Path | None = None) -> Dict[str, str]:
     """
-    从 data/processed/generated_responses.jsonl 构建
-    candidate_id -> response 的索引，方便在 judge_results 里回显模型回复。
+    构建 candidate_id -> response 的索引，方便在 judge_results 里回显模型回复。
+
+    优先尝试与当前 judge_results 同目录的 generated_responses.jsonl，
+    若不存在则回退到 data/processed/generated_responses.jsonl。
     """
     idx: Dict[str, str] = {}
-    path = DATA_DIR / "processed" / "generated_responses.jsonl"
-    if not path.exists():
-        return idx
+    candidate_paths: list[Path] = []
 
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except Exception:  # noqa: BLE001
-                continue
+    if source_rel:
+        rel_path = Path(source_rel)
+        base_dir = rel_path.parent
+        if not rel_path.is_absolute():
+            base_dir = DATA_DIR / base_dir
+        candidate_paths.append(base_dir / "generated_responses.jsonl")
 
-            candidates = rec.get("candidates")
-            if not isinstance(candidates, list):
-                continue
+    candidate_paths.append(DATA_DIR / "processed" / "generated_responses.jsonl")
 
-            for cand in candidates:
-                if not isinstance(cand, dict):
+    for path in candidate_paths:
+        if not path.exists():
+            continue
+
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
                     continue
-                cid = cand.get("candidate_id")
-                resp = cand.get("response")
-                if isinstance(cid, str) and isinstance(resp, str):
-                    idx[cid] = resp
+                try:
+                    rec = json.loads(line)
+                except Exception:  # noqa: BLE001
+                    continue
+
+                candidates = rec.get("candidates")
+                if not isinstance(candidates, list):
+                    continue
+
+                for cand in candidates:
+                    if not isinstance(cand, dict):
+                        continue
+                    cid = cand.get("candidate_id")
+                    resp = cand.get("response")
+                    if isinstance(cid, str) and isinstance(resp, str):
+                        idx[cid] = resp
+
+        # 优先使用与当前文件同目录的索引，找到后即可返回
+        if idx:
+            return idx
+
+    return idx
+
+
+@st.cache_data(show_spinner=False)
+def load_generated_context_question_index(
+    source_rel: str | Path | None = None,
+) -> Dict[str, dict[str, str | None]]:
+    """
+    构建 sample_id -> {"context": ..., "question": ...} 的索引，方便在 judge 视图中回显原始上下文。
+
+    优先尝试与当前 judge_results 同目录的 generated_responses.jsonl，
+    若不存在则回退到 data/processed/generated_responses.jsonl。
+    """
+    idx: Dict[str, dict[str, str | None]] = {}
+    candidate_paths: list[Path] = []
+
+    if source_rel:
+        rel_path = Path(source_rel)
+        base_dir = rel_path.parent
+        if not rel_path.is_absolute():
+            base_dir = DATA_DIR / base_dir
+        candidate_paths.append(base_dir / "generated_responses.jsonl")
+
+    candidate_paths.append(DATA_DIR / "processed" / "generated_responses.jsonl")
+
+    for path in candidate_paths:
+        if not path.exists():
+            continue
+
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                raw = line.strip()
+                if not raw:
+                    continue
+                try:
+                    rec = json.loads(raw)
+                except Exception:  # noqa: BLE001
+                    continue
+
+                if not isinstance(rec, dict):
+                    continue
+
+                sid = rec.get("sample_id")
+                if sid is None:
+                    continue
+                sample_id_str = str(sid)
+
+                context = rec.get("context")
+                question = rec.get("question")
+                context_str = context if isinstance(context, str) else None
+                question_str = question if isinstance(question, str) else None
+
+                if context_str is None and question_str is None:
+                    continue
+
+                idx[sample_id_str] = {
+                    "context": context_str,
+                    "question": question_str,
+                }
+
+        if idx:
+            return idx
 
     return idx
 
@@ -328,6 +417,41 @@ def _maybe_parse_json_from_markdown_block(text: str) -> Any | None:
         return None
 
 
+def _fix_inline_bullet_lists(text: str) -> str:
+    """
+    将“： - xxx”这类在同一行内的列表项拆成换行，
+    便于 Markdown 正确识别为列表；避免改动代码块/表格行。
+    """
+    lines: list[str] = []
+    in_code_block = False
+
+    for line in text.splitlines():
+        # 进入/退出代码块时直接记录
+        if re.match(r"^\s*```", line):
+            in_code_block = not in_code_block
+            lines.append(line)
+            continue
+
+        # 代码块或表格行（以 | 开头）不做替换，防止误伤
+        if in_code_block or line.lstrip().startswith("|"):
+            lines.append(line)
+            continue
+
+        # 常见模式：句末冒号/句号后紧跟 "- "
+        fixed = re.sub(r"([：:。；;，,])\s*-\s+", r"\1\n\n- ", line)
+        # 若仍有非行首的 "- "，补一个换行（仅匹配空格/Tab，避免吞掉空行）
+        fixed = re.sub(r"(?<!^)(?<!\n)[ \t]+-\s+", r"\n- ", fixed)
+
+        # 分行处理，确保行首 "- " 前有空行以配合 sane_lists
+        for sub in fixed.split("\n"):
+            if sub.strip().startswith("- "):
+                if lines and lines[-1].strip() != "":
+                    lines.append("")  # 插入一行空行，满足 sane_lists 对列表前空行的要求
+            lines.append(sub)
+
+    return "\n".join(lines)
+
+
 def _render_response_box(resp: str) -> None:
     """
     将模型回复渲染在类似“竖版手机屏幕比例（16:9）”的方框内。
@@ -337,11 +461,13 @@ def _render_response_box(resp: str) -> None:
     """
     # 将 Markdown 转为 HTML。
     # 开启 tables / fenced_code 等扩展，以便在方框内正确渲染表格等 GitHub 风格 Markdown。
+    fixed_resp = _fix_inline_bullet_lists(resp)
+
     html_body = markdown.markdown(
-        resp,
+        fixed_resp,
         extensions=[
-            "extra",        # 包含 tables、fenced_code 等常用扩展
-            "sane_lists",
+            "extra",       # 包含 tables、fenced_code 等常用扩展
+            "sane_lists",  # 更符合 GitHub 风格列表
         ],
     )
 
@@ -705,7 +831,23 @@ def render_judge_results(
 
     # 表格之后：按“手机屏幕比例”的方框展示每个候选的回复文本（Markdown）
     # 并在页面中每行展示 4 个回复卡片（使用 Streamlit 的列布局）
-    resp_index = load_generated_response_index()
+    # 在展示回复前，回显 generated_responses.jsonl 中的 context 与 question，便于对照
+    cq_index = load_generated_context_question_index(source_rel=source_rel)
+    if sample_id is not None:
+        meta = cq_index.get(str(sample_id), {})
+        context = meta.get("context")
+        question = meta.get("question")
+
+        if context or question:
+            st.markdown("**源上下文（generated_responses.jsonl）**")
+            if context:
+                st.text(context)
+            if question:
+                st.markdown("**用户提问**")
+                st.text(question)
+            st.markdown("---")
+
+    resp_index = load_generated_response_index(source_rel=source_rel)
     if resp_index:
         # 先过滤出有有效回复文本的候选
         entries: list[tuple[dict[str, Any], str]] = []
@@ -1065,31 +1207,77 @@ def main() -> None:
     st.title("data 目录可视化浏览")
     st.caption("自动加载 data/ 下的 JSON / JSONL 文件；每条记录可展开查看，长文本使用 Markdown 渲染。")
 
-    files = find_data_files()
+    # 第一级选择：data/ 下的数据集目录（允许选择 data 根目录）
+    dataset_dirs = list_dataset_dirs()
+    dataset_options: list[tuple[str, Path]] = [("data 根目录", DATA_DIR)] + [
+        (d.name, d) for d in dataset_dirs
+    ]
+
+    # 试探性选择一个包含 judge_results 的目录作为默认选项
+    dataset_default_idx = 0
+    fallback_idx: int | None = None
+    for i, (_, base_dir) in enumerate(dataset_options):
+        rels_in_dir = [str(p.relative_to(DATA_DIR)) for p in find_data_files(base_dir)]
+        if any("judge_results_kto" in r for r in rels_in_dir):
+            dataset_default_idx = i
+            break
+        if fallback_idx is None and any("judge_results" in r for r in rels_in_dir):
+            fallback_idx = i
+    if fallback_idx is not None and dataset_default_idx == 0:
+        dataset_default_idx = fallback_idx
+
+    selected_dataset = st.sidebar.selectbox(
+        "选择数据集目录（data/ 下一级）",
+        options=dataset_options,
+        index=dataset_default_idx,
+        format_func=lambda opt: opt[0],
+    )
+    selected_dataset_label, selected_base_dir = selected_dataset
+
+    files = find_data_files(selected_base_dir)
     if not files:
-        st.warning("未在 data/ 目录下找到任何 .json 或 .jsonl 文件。")
+        st.warning("未在当前选择的目录下找到任何 .json 或 .jsonl 文件。")
         return
 
-    rel_paths = [str(p.relative_to(DATA_DIR)) for p in files]
+    rel_paths_global = [str(p.relative_to(DATA_DIR)) for p in files]
+    rel_paths_display = [str(p.relative_to(selected_base_dir)) for p in files]
 
     st.sidebar.header("文件选择")
-    # 默认优先选中 data/processed/judge_results_kto.jsonl 或
-    # data/processed/judge_results.jsonl（若存在）
+    # 默认优先选中本目录下的 judge_results_kto* 或 judge_results*.jsonl
     default_index = 0
-    preferred_defaults = [
-        "processed/judge_results_kto.jsonl",
-        "processed/judge_results_kto_v1.jsonl",
-        "processed/judge_results.jsonl",
-    ]
-    for rel in preferred_defaults:
-        if rel in rel_paths or "processed/judge_results_kto" in rel_paths:
-            default_index = rel_paths.index(rel)
+    for idx, rel in enumerate(rel_paths_global):
+        if "judge_results_kto" in rel:
+            default_index = idx
             break
+    else:
+        for idx, rel in enumerate(rel_paths_global):
+            if "judge_results" in rel:
+                default_index = idx
+                break
 
-    selected_rel = st.sidebar.selectbox("选择要查看的文件", rel_paths, index=default_index)
-    selected_path = files[rel_paths.index(selected_rel)]
+    file_indices = list(range(len(files)))
+    selected_idx = st.sidebar.selectbox(
+        "选择要查看的文件",
+        options=file_indices,
+        index=default_index,
+        format_func=lambda i: rel_paths_display[i],
+    )
+    selected_rel = rel_paths_global[selected_idx]
+    selected_path = files[selected_idx]
 
-    st.sidebar.caption(f"当前文件：{selected_rel}")
+    st.sidebar.caption(f"当前数据集：{selected_dataset_label}")
+    st.sidebar.caption(f"当前文件：{rel_paths_display[selected_idx]}")
+
+    manual_rank_path = _build_manual_rank_output_path(selected_rel)
+    try:
+        manual_rank_rel = manual_rank_path.relative_to(selected_base_dir)
+    except ValueError:
+        # 兜底使用 data 根目录相对路径，若仍失败则直接显示完整路径
+        try:
+            manual_rank_rel = manual_rank_path.relative_to(DATA_DIR)
+        except ValueError:
+            manual_rank_rel = manual_rank_path
+    st.sidebar.caption(f"当前打分文件：{manual_rank_rel}")
 
     records = load_records(selected_path)
     total = len(records)

@@ -259,15 +259,15 @@ class _OpenAIChatGenerator(BaseGenerator):
                     raise ValueError("Empty or invalid content returned from LLM.")
                 duration = time.time() - start_ts
                 # 每一次 LLM 调用成功后的反馈日志
-                self._logger.info(
-                    "LLM generate call success | model=%s | sample_id=%s | attempt=%d/%d | elapsed=%.2fs | content_len=%d",
-                    self.model_name,
-                    sample_id or "<unknown>",
-                    attempt + 1,
-                    self._max_retries + 1,
-                    duration,
-                    len(content),
-                )
+                # self._logger.info(
+                #     "LLM generate call success | model=%s | sample_id=%s | attempt=%d/%d | elapsed=%.2fs | content_len=%d",
+                #     self.model_name,
+                #     sample_id or "<unknown>",
+                #     attempt + 1,
+                #     self._max_retries + 1,
+                #     duration,
+                #     len(content),
+                # )
                 return content
             except HTTPStatusError as exc:  # type: ignore[assignment]
                 last_exc = exc

@@ -5,7 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Iterable, Dict, List, Sequence
+from typing import Iterable, Dict, List, Sequence, Any
 
 from collections import defaultdict
 import logging
@@ -23,12 +23,7 @@ from src.data_loader.context_builder import (
 )
 from src.generators.base import build_generators, Candidate, generate_candidates
 from src.judges.base import build_judges, BaseJudge
-from src.scoring.aggregator import (
-    aggregate_scores,
-    group_scores_by_sample,
-    flatten_grouped_scores,
-)
-from src.ranking.ranker import rank_candidates, build_pairs
+from src.scoring.aggregator import aggregate_scores, group_scores_by_sample
 from src.utils.io import write_jsonl, ensure_dir, read_jsonl
 from src.utils.logging_utils import init_logger
 from src.utils.env import load_env
@@ -267,6 +262,96 @@ def _load_completed_generated_rows(config: PipelineConfig) -> Dict[str, Dict]:
     return completed
 
 
+def _manual_score_from_total_20(total_score_20: Any) -> int:
+    """
+    将 0–20 分的 total_score_20 映射为 0–5 的人工打分，阈值与 visualize_data_app.py 保持一致：
+    - 20 分 -> 5 分
+    - 19–16 分 -> 4 分
+    - 15–14 分 -> 3 分
+    - 13–12 分 -> 2 分
+    - 1–11 分 -> 1 分
+    - 0 分或异常值 -> 0 分
+    """
+    try:
+        v = float(total_score_20)
+    except (TypeError, ValueError):
+        return 0
+
+    if v <= 0:
+        return 0
+    if v >= 20:
+        return 5
+    if 16 <= v < 20:
+        return 4
+    if 14 <= v < 16:
+        return 3
+    if 12 <= v < 14:
+        return 2
+    if 0 < v < 12:
+        return 1
+    return 0
+
+
+def _build_manual_rank_output_path_from_source(source_path: Path) -> Path:
+    """
+    根据 judge_results_kto.jsonl 的路径生成对应的 *_rank_manually.jsonl 路径。
+    规则与 visualize_data_app.py 中 _build_manual_rank_output_path 保持一致。
+    """
+    suffix = source_path.suffix or ".jsonl"
+    return source_path.parent / f"{source_path.stem}_rank_manually{suffix}"
+
+
+def _convert_record_to_manual_rank_payload(
+    record: dict[str, Any],
+    source_rel: str,
+) -> dict[str, Any] | None:
+    """
+    将单条 judge_results_kto 记录转换为 *_rank_manually.jsonl 的行结构。
+    """
+    if not isinstance(record, dict):
+        return None
+
+    sample_id = record.get("sample_id")
+    if sample_id is None:
+        return None
+
+    results = record.get("results")
+    if not isinstance(results, list):
+        return None
+
+    manual_ranks: list[dict[str, Any]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        cid = item.get("candidate_id")
+        if cid is None:
+            continue
+
+        manual_ranks.append(
+            {
+                "candidate_id": cid,
+                "model_name": item.get("model_name"),
+                "model_type": item.get("model_type"),
+                "aggregate_score": item.get("aggregate_score"),
+                "ground_score": item.get("ground_score"),
+                "structure_score": item.get("structure_score"),
+                "manual_score": _manual_score_from_total_20(item.get("total_score_20")),
+            }
+        )
+
+    if not manual_ranks:
+        return None
+
+    context_fields = {k: v for k, v in record.items() if k != "results"}
+
+    return {
+        "sample_id": str(sample_id),
+        "source_file": source_rel,
+        "context": context_fields,
+        "manual_ranks": manual_ranks,
+    }
+
+
 def run_pipeline(
     config_path: str | Path,
     raw_data_path: str | Path,
@@ -279,7 +364,7 @@ def run_pipeline(
     stage 取值：
     - generate：从原始数据构建样本 + 上下文，并生成候选回复，结果写入 JSONL；
     - judge：基于已生成的 samples.jsonl / generated_responses.jsonl 执行打分聚合；
-    - rank：基于已生成的 judge_results.jsonl 执行排序与正负样本构建；
+    - rank：对上一阶段生成的 judge_results_kto.jsonl 按总分阈值自动生成 *_rank_manually.jsonl；
     - all（默认）：依次执行 generate → judge → rank，每个阶段完成后落盘，便于中断与续跑。
     """
     logger = logging.getLogger(__name__)
@@ -347,6 +432,16 @@ def run_pipeline(
                 reused_count,
             )
 
+            # 预先根据当前配置推导出“应生成的模型集合”，便于逐样本完成度判断
+            expected_model_pairs: set[tuple[str, str]] = set()
+            try:
+                generators_for_check = build_generators(config.generators)
+                expected_model_pairs = {
+                    (gen.model_type, gen.model_name) for gen in generators_for_check
+                }
+            except Exception as exc:  # pragma: no cover - 防御性日志
+                logger.warning("未能解析生成器配置以做完成度校验：%r", exc)
+
             # 采用 append 方式实时写盘：每处理完一批样本，就将这些样本的完整候选写入文件。
             with Path(output_path).open("a", encoding="utf-8") as f:
                 for start in range(0, len(samples_to_generate), batch_size):
@@ -385,6 +480,20 @@ def run_pipeline(
                         f.flush()
                         newly_generated_count += 1
 
+                        # 当前样本的所有模型回复已就绪，打印一次标记便于前端观察进度
+                        if expected_model_pairs:
+                            generated_pairs = {
+                                (c.model_type, c.model_name) for c in per_sample_candidates
+                            }
+                            if expected_model_pairs.issubset(generated_pairs):
+                                logger.info(
+                                    "Sample %s 已完成所有模型生成（%d/%d），模型列表：%s",
+                                    sid,
+                                    len(per_sample_candidates),
+                                    len(expected_model_pairs),
+                                    ", ".join(sorted({c.model_name for c in per_sample_candidates})),
+                                )
+
             logger.info(
                 "Generation stage finished: total_samples=%d, newly_generated=%d, reused_from_previous_runs=%d",
                 total_samples,
@@ -420,35 +529,44 @@ def run_pipeline(
 
     # ==== Stage: rank ====
     if stage in ("all", "rank"):
-        if stage == "rank":
-            judge_results_path = config.output_files.judge_results
-            raw_rows = read_jsonl(judge_results_path)
-            if not raw_rows:
-                raise FileNotFoundError(
-                    f"Judge results not found or empty: {judge_results_path}. "
-                    "请先运行 `--stage judge` 或 `--stage all`。"
-                )
-            # 兼容新的「按 sample_id 分组」结构，以及旧版本的扁平结构
-            aggregated_scores = flatten_grouped_scores(raw_rows)
+        judge_kto_path = config.processed_dir / "judge_results_kto.jsonl"
+        if not judge_kto_path.exists():
+            raise FileNotFoundError(
+                f"未找到 judge_results_kto.jsonl：{judge_kto_path}。"
+                "请先完成上一阶段的 KTO judge。"
+            )
 
-        ranked = rank_candidates(aggregated_scores)
-        pairs = build_pairs(
-            ranked,
-            top_k=config.ranking.top_k,
-            bottom_k=config.ranking.bottom_k,
-            min_score_diff=config.ranking.min_score_diff,
-        )
-        write_jsonl(
-            config.output_files.ranked_pairs,
-            [
-                {"sample_id": p.sample_id, "positive": p.positive, "negative": p.negative}
-                for p in pairs
-            ],
-        )
+        raw_rows = read_jsonl(judge_kto_path)
+        if not raw_rows:
+            raise ValueError(f"文件为空或解析失败：{judge_kto_path}")
+
+        data_dir = PROJECT_ROOT / "data"
+        try:
+            source_rel = str(judge_kto_path.relative_to(data_dir))
+        except ValueError:
+            source_rel = str(judge_kto_path)
+
+        payloads: list[dict[str, Any]] = []
+        for rec in raw_rows:
+            payload = _convert_record_to_manual_rank_payload(rec, source_rel)
+            if payload:
+                payloads.append(payload)
+
+        if not payloads:
+            raise ValueError("未能从 judge_results_kto.jsonl 中提取任何有效记录，无法生成打分文件。")
+
+        output_path = _build_manual_rank_output_path_from_source(judge_kto_path)
+        ensure_dir(output_path.parent)
+
+        with output_path.open("w", encoding="utf-8") as f:
+            for item in payloads:
+                f.write(json.dumps(item, ensure_ascii=False) + "\n")
+
         logger.info(
-            "Pipeline finished: %d judge rows, %d pairs",
-            len(aggregated_scores),
-            len(pairs),
+            "自动打分完成：输入=%s，输出=%s，样本数=%d",
+            judge_kto_path,
+            output_path,
+            len(payloads),
         )
 
 
