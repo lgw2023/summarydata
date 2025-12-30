@@ -290,8 +290,8 @@ def run_validators(answer: str, data: Dict[str, Any]) -> List[Dict[str, Any]]:
     return pens
 
 # ===================== Prompts (JSON-only checks) =====================
-from score_prompt_v3 import GROUND_SYSTEM_PROMPT_TPL, GROUND_PROMPT_TPL
-from score_prompt_v3 import STRUCT_SYSTEM_PROMPT_TPL, STRUCT_PROMPT_TPL
+from prompts.score_prompt_v4 import GROUND_SYSTEM_PROMPT_TPL, GROUND_PROMPT_TPL
+from prompts.score_prompt_v4 import STRUCT_SYSTEM_PROMPT_TPL, STRUCT_PROMPT_TPL
 
 
 # ===================== LLM call =====================
@@ -341,6 +341,55 @@ def extract_json_from_text(text: str) -> str:
     # If no valid JSON found, return original text (will fail in json.loads but we'll handle it)
     return text
 
+def _is_insufficient_balance(err: Optional[BaseException] = None, text: Optional[str] = None) -> bool:
+    """
+    Detect vendor billing / balance exhaustion signals.
+    We treat these as non-retryable and abort the whole program.
+    """
+    needles = [
+        "insufficient balance",
+        "insufficient_balance",
+        "insufficient funds",
+        "余额不足",
+        "账户余额不足",
+    ]
+    try:
+        if err is not None:
+            s = str(err).lower()
+            if any(n in s for n in needles):
+                return True
+    except Exception:
+        pass
+    try:
+        if text:
+            s = str(text).lower()
+            if any(n in s for n in needles):
+                return True
+    except Exception:
+        pass
+    return False
+
+def _fatal_exit_insufficient_balance(err: Optional[BaseException] = None, text: Optional[str] = None) -> None:
+    """
+    In multi-threaded mode, sys.exit() only terminates the current thread.
+    Use os._exit() to terminate the whole process immediately.
+    """
+    msg = "[FATAL] Insufficient Balance detected. Abort without retry.\n"
+    if err is not None:
+        msg += f"Error: {type(err).__name__}: {err}\n"
+    if text:
+        preview = text[:500] + ("..." if len(text) > 500 else "")
+        msg += f"Response preview: {preview}\n"
+    try:
+        print(msg, file=sys.stderr)
+    except Exception:
+        pass
+    try:
+        sys.stderr.flush()
+    except Exception:
+        pass
+    os._exit(2)
+
 def call_judge(
     client,
     model_name: str,
@@ -389,6 +438,10 @@ def call_judge(
                 raise ValueError("Empty response from LLM")
             
             last_text = text
+
+            # Non-retryable: billing / balance exhausted
+            if _is_insufficient_balance(text=text):
+                _fatal_exit_insufficient_balance(text=text)
             
             # Extract JSON from text (handles markdown code blocks)
             json_text = extract_json_from_text(text)
@@ -418,6 +471,11 @@ def call_judge(
         except Exception as e:
             last_err = e
             duration = time.time() - start_ts
+
+            # Non-retryable: billing / balance exhausted
+            if _is_insufficient_balance(err=e, text=last_text):
+                _fatal_exit_insufficient_balance(err=e, text=last_text)
+
             error_msg = f"Attempt {a+1}/{retries} failed: {type(e).__name__}: {str(e)}"
             if last_text:
                 # Log first 200 chars of response for debugging

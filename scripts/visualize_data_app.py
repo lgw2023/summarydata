@@ -277,13 +277,36 @@ def render_candidates(candidates: list[dict[str, Any]]) -> None:
                 st.markdown("---")
 
 
+def _candidate_generated_responses_filenames(
+    source_rel: str | Path | None,
+) -> tuple[str, ...]:
+    """
+    根据当前展示的 judge_results 文件名，推导应优先读取的 generated_responses*.jsonl。
+
+    约定：
+    - judge_results_kto.jsonl -> generated_responses.jsonl（默认）
+    - judge_results_kto_merger.jsonl -> generated_responses_merged.jsonl（新增）
+
+    返回值按“优先级”排序，调用侧可按顺序尝试存在性。
+    """
+    if not source_rel:
+        return ("generated_responses.jsonl",)
+
+    name = Path(source_rel).name
+    if name == "judge_results_kto_merger.jsonl":
+        # 新增：merger 版本优先读取 merged 文件，同时保留回退到默认文件，兼容旧目录结构
+        return ("generated_responses_merged.jsonl", "generated_responses.jsonl")
+
+    return ("generated_responses.jsonl",)
+
+
 @st.cache_data(show_spinner=False)
 def load_generated_response_index(source_rel: str | Path | None = None) -> Dict[str, str]:
     """
     构建 candidate_id -> response 的索引，方便在 judge_results 里回显模型回复。
 
-    优先尝试与当前 judge_results 同目录的 generated_responses.jsonl，
-    若不存在则回退到 data/processed/generated_responses.jsonl。
+    优先尝试与当前 judge_results 同目录的 generated_responses*.jsonl（根据 judge 文件名自动匹配），
+    若不存在则回退到 data/processed/generated_responses*.jsonl。
     """
     idx: Dict[str, str] = {}
     candidate_paths: list[Path] = []
@@ -293,9 +316,11 @@ def load_generated_response_index(source_rel: str | Path | None = None) -> Dict[
         base_dir = rel_path.parent
         if not rel_path.is_absolute():
             base_dir = DATA_DIR / base_dir
-        candidate_paths.append(base_dir / "generated_responses.jsonl")
+        for fname in _candidate_generated_responses_filenames(source_rel):
+            candidate_paths.append(base_dir / fname)
 
-    candidate_paths.append(DATA_DIR / "processed" / "generated_responses.jsonl")
+    for fname in _candidate_generated_responses_filenames(source_rel):
+        candidate_paths.append(DATA_DIR / "processed" / fname)
 
     for path in candidate_paths:
         if not path.exists():
@@ -337,8 +362,8 @@ def load_generated_context_question_index(
     """
     构建 sample_id -> {"context": ..., "question": ...} 的索引，方便在 judge 视图中回显原始上下文。
 
-    优先尝试与当前 judge_results 同目录的 generated_responses.jsonl，
-    若不存在则回退到 data/processed/generated_responses.jsonl。
+    优先尝试与当前 judge_results 同目录的 generated_responses*.jsonl（根据 judge 文件名自动匹配），
+    若不存在则回退到 data/processed/generated_responses*.jsonl。
     """
     idx: Dict[str, dict[str, str | None]] = {}
     candidate_paths: list[Path] = []
@@ -348,9 +373,11 @@ def load_generated_context_question_index(
         base_dir = rel_path.parent
         if not rel_path.is_absolute():
             base_dir = DATA_DIR / base_dir
-        candidate_paths.append(base_dir / "generated_responses.jsonl")
+        for fname in _candidate_generated_responses_filenames(source_rel):
+            candidate_paths.append(base_dir / fname)
 
-    candidate_paths.append(DATA_DIR / "processed" / "generated_responses.jsonl")
+    for fname in _candidate_generated_responses_filenames(source_rel):
+        candidate_paths.append(DATA_DIR / "processed" / fname)
 
     for path in candidate_paths:
         if not path.exists():

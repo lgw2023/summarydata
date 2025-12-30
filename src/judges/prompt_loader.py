@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from score_prompt import GROUND_PROMPT_TPL, STRUCT_PROMPT_TPL
+from prompts.score_prompt import GROUND_PROMPT_TPL, STRUCT_PROMPT_TPL
 
 
 def load_prompts_from_config(cfg: dict) -> Tuple[str, str]:  # noqa: ARG001 - cfg 为兼容旧配置保留

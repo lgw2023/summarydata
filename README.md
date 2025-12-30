@@ -94,12 +94,12 @@ project_root/
 
 ### 1.3 模型与环境变量配置（`.env`）
 
-本项目推荐使用 `.env` 文件统一管理各类模型与代理配置，并通过 `python-dotenv` 在代码中加载。
+本项目推荐使用 `.env` 文件统一管理各类模型与代理配置，并通过 `python-dotenv` 在代码中加载（模型调用使用 OpenAI 兼容接口，依赖 `openai>=1.0`）。
 
 - **安装依赖**
 
 ```bash
-pip install python-dotenv
+pip install python-dotenv openai>=1.0
 ```
 
 - **`.env` 示例（请勿提交到仓库，`*` 处替换为你自己的真实密钥）**
@@ -136,6 +136,11 @@ LLM_MODEL_JUDGE_API_KEY=
 LLM_MODEL_QWQ32_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL_QWQ32_NAME=qwq-32b-preview
 LLM_MODEL_QWQ32_API_KEY=
+
+# QwenMax（OpenAI 兼容接口）
+LLM_MODEL_QWENMAX_URL=
+LLM_MODEL_QWENMAX_NAME=
+LLM_MODEL_QWENMAX_API_KEY=
 
 
 # 代理（可选）

@@ -28,6 +28,7 @@ from src.scoring.aggregator import aggregate_scores, group_scores_by_sample
 from src.utils.io import write_jsonl, ensure_dir, read_jsonl
 from src.utils.logging_utils import init_logger
 from src.utils.env import load_env
+from prompts.response_prompt_v4 import SYSTEMT_PROMPT_PHONE_GENERAL
 
 
 # 默认的 judge 并发 worker 数（按样本/候选切分任务）
@@ -409,6 +410,50 @@ def run_pipeline(
         raw_data_path,
     )
     config = PipelineConfig.from_yaml(config_path, raw_data_path=raw_data_path)
+
+    # ==== 针对参考答案 ref_answer_phone / ref_think_phone 的动态降级 ====
+    # 当输入文件中不存在对应参考答案列时（例如没有 answer_phone / think_phone），
+    # 在本次运行中自动移除这两个 reference 生成器，等价于“全流程当作不存在这两项”，
+    # 以避免生成大量「（无参考答案）」的占位候选。
+    try:
+        with config.raw_data.open("r", encoding="utf-8") as f_in:
+            reader = csv.DictReader(f_in)
+            fieldnames = set(reader.fieldnames or [])
+    except Exception as exc:  # pragma: no cover - 防御性日志
+        fieldnames = set()
+        logging.getLogger(__name__).warning(
+            "Failed to read raw_data header for reference generator check: %r", exc
+        )
+
+    if fieldnames:
+        original_generators = list(config.generators)
+        filtered_generators: list[dict[str, Any]] = []
+        skipped_models: list[str] = []
+
+        for gen_cfg in original_generators:
+            if gen_cfg.get("name") == "reference":
+                model_name = str(gen_cfg.get("model_name") or "")
+                answer_key = str(gen_cfg.get("answer_key") or "")
+
+                # 只对默认的 ref_answer_phone / ref_think_phone 做动态关闭：
+                # - 默认约定其真实列名为 answer_phone / think_phone；
+                # - 同时也兼容用户误将列命名为 ref_answer_phone / ref_think_phone 的情况。
+                if model_name in {"ref_answer_phone", "ref_think_phone"}:
+                    expected_cols = {answer_key, model_name}
+                    if not any(col and col in fieldnames for col in expected_cols):
+                        skipped_models.append(model_name)
+                        continue
+
+            filtered_generators.append(gen_cfg)
+
+        if skipped_models:
+            logger.info(
+                "输入文件 %s 中未找到参考答案列，以下 reference 生成器将被跳过：%s",
+                config.raw_data,
+                ", ".join(sorted(skipped_models)),
+            )
+        config.generators = filtered_generators
+
     ensure_dir(config.processed_dir)
     ensure_dir(config.intermediate_dir)
 

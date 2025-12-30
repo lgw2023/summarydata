@@ -1,6 +1,7 @@
 # 核心依赖
 pyyaml
 httpx
+openai>=1.0
 
 # 环境变量管理（.env）
 python-dotenv

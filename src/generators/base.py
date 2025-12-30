@@ -21,7 +21,7 @@ except Exception:  # pragma: no cover
     RequestError = Exception  # type: ignore
     HTTPStatusError = Exception  # type: ignore
 
-from response_prompt_v2 import SYSTEMT_PROMPT_PHONE_GENERAL
+from prompts.response_prompt_v4 import SYSTEMT_PROMPT_PHONE_GENERAL
 
 
 # 每个「模型」在内部对不同样本进行并行生成时的默认最大并发数。

@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from src.data_loader.excel_loader import Sample
 from src.generators.base import Candidate
 from src.scoring.parser import safe_parse_json, compute_overall_score
-from score_prompt import GROUND_PROMPT_TPL, STRUCT_PROMPT_TPL
+from prompts.score_prompt import GROUND_PROMPT_TPL, STRUCT_PROMPT_TPL
 
 try:  # 可选依赖，仅在使用 LLMJudge 时才需要
     import httpx  # type: ignore
