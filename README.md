@@ -94,19 +94,30 @@ GENERATOR_SAMPLE_WORKERS_PER_MODEL=1
 ## 示例：用仓库内置 xlsx 快速跑通
 
 
-#### 默认以summary_eval_diff.xlsx数据为例，展示对原始数据文件中，个人数据 data 列的数据分类、清洗、解析、格式化重构输出的 api。
-#### 独立使用时需要参考该脚本的代码，适配到自己的代码中（思远和杰克，会需要用到这部分代码）
+### 个人数据 data 列的数据分类、清洗、解析、格式化重构输出
+
+默认以summary_eval_diff.xlsx数据为例，展示对原始数据文件中，个人数据 data 列的数据分类、清洗、解析、格式化重构输出的 api。  
+独立使用时需要参考该脚本的代码，适配到自己的代码中（思远和杰克，会需要用到这部分代码）  
+```bash
 python scripts/classify_personal_data.py
+```
 
-#### 针对不同数据源文件的采样生成，即完成“加载原始数据（目前默认不做数据清洗和格式化重构）->区分手机手表->构造系统提示词->构造上下文提示词->遍历各个模型进行结果采样->采样结果见 data/${file} 目录”，此处仅用“--max-rows 3”进行测试。
-#### （嘉诚会需要用到这部分，但不需要用到代码，仅需要用到采样的jsonl 结果，以及参考最新版手机手表的系统提示词prompts/system_prompt_v5_yixuan.py去写打分 prompt）
-export file='summary_train_v36' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate --max-rows 3
+### 模型采样回复
+针对不同数据源文件的采样生成，即完成“加载原始数据（目前默认不做数据清洗和格式化重构）->区分手机手表->构造系统提示词->构造上下文提示词->遍历各个模型进行结果采样->采样结果见 data/${file} 目录”，此处仅用“--max-rows 3”进行测试。  
+（嘉诚会需要用到这部分，但不需要用到代码，仅需要用到采样的jsonl 结果，以及参考最新版手机手表的系统提示词prompts/system_prompt_v5_yixuan.py去写打分 prompt）  
+```bash
+# rl数据（优先使用该数据做 demo算法开发）
 export file='summary_train_data_grpo_v6' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate --max-rows 3
+# sft数据
+export file='summary_train_v36' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate --max-rows 3
+# 评测数据
 export file='summary_eval_diff' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate --max-rows 3
-
-#### 对以上采样回复结果的打分代码，已废弃，后续这部分使用王博的代码。
+```
+### LLM-as-judge
+对以上采样回复结果的打分代码，已废弃，后续这部分使用王博的代码。  
+```bash
 export file='summary_train_data_grpo_v6' && python scripts/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py --workers 2 --inner_workers 12 --num_repeat 3 --raw-data $file.xlsx
-
+```
 
 ---
 
