@@ -20,6 +20,7 @@ from src.data_clean import *  # noqa: F403
 from src.data_clean import __all__  # noqa: F401
 
 def main(
+    file,
     *,
     xlsx_path: str | Path | None = None,
     sheet_name: str | int | None = 0,
@@ -34,7 +35,7 @@ def main(
     - `aggregate_dataframe.aggregate_patterns_to_dataframes`：输出 DataFrame 列表（带 df.attrs 元信息）
     - `aggregate_time.aggregate_patterns_by_time / aggregate_patterns_to_time_jsonl`：按时间桶聚合为结构化 JSON/JSONL
     """
-    _xlsx_path = Path(xlsx_path) if xlsx_path is not None else (PROJECT_ROOT / "summary_eval_diff.xlsx")
+    _xlsx_path = Path(xlsx_path) if xlsx_path is not None else (PROJECT_ROOT / file)
     if not _xlsx_path.exists():
         raise FileNotFoundError(f"未找到 Excel 文件：{_xlsx_path}")
 
@@ -118,4 +119,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    main(file="summary_eval_diff.xlsx")

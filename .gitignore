@@ -210,8 +210,6 @@ summary_train_v3.xlsx
 /.idea
 /data
 /train
-/data
-/data
 .env
 configs/data_diff_sample.yaml
 configs/data_diff_sample.yaml

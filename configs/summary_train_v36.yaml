@@ -1,13 +1,13 @@
 pipeline:
   generators:
     # 实验模型（例如 qwq-32b-preview，经 DashScope OpenAI 兼容接口）
-    - name: experimental
-      model_name: "qwq-32b-preview"
-      base_url_env: "LLM_MODEL_QWQ32_URL"
-      api_key_env: "LLM_MODEL_QWQ32_API_KEY"
-      # temperature: 0.7
-      # top_p: 0.9
-      # max_tokens: 512
+    # - name: experimental
+    #   model_name: "qwq-32b-preview"
+    #   base_url_env: "LLM_MODEL_QWQ32_URL"
+    #   api_key_env: "LLM_MODEL_QWQ32_API_KEY"
+    #   # temperature: 0.7
+    #   # top_p: 0.9
+    #   # max_tokens: 512
 
     # 开源 SOTA 模型（例如 Qwen3 系列，经 DeepInfra / DeepSeek / DashScope OpenAI 兼容接口）
     # - Qwen3-235B（通过 .env 中的 LLM_MODEL_QWEN235_* 配置）
