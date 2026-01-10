@@ -9,6 +9,7 @@ python-dotenv
 # 分析与可视化（可选但推荐）
 matplotlib
 pandas
+openpyxl
 streamlit
 
 # Markdown 渲染

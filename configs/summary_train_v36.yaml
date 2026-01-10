@@ -92,14 +92,22 @@ pipeline:
       # top_p: 0.9
       # max_tokens: 512
 
-    # 参考答案（从输入表格中抽取，分别作为两条独立候选）
-    - name: reference
-      model_name: "ref_answer_phone"
-      answer_key: "ref_answer_phone"
+    # 参考答案（从输入表格中抽取；按设备区分：watch/phone）
+    - name: reference_watch
+      model_name: "answer_watch"
+      answer_key: "answer_watch"
 
-    - name: reference
-      model_name: "ref_think_phone"
-      answer_key: "ref_think_phone"
+    - name: reference_watch
+      model_name: "think_answer_watch"
+      answer_key: "think_answer_watch"
+      
+    - name: reference_phone
+      model_name: "answer_phone"
+      answer_key: "answer_phone"
+
+    - name: reference_phone
+      model_name: "think_answer_phone"
+      answer_key: "think_answer_phone"
 
 
   judges:
@@ -112,9 +120,3 @@ pipeline:
       timeout: 60
       max_retries: 30
       backoff_base: 1.0
-
-  ranking:
-    top_k: 1
-    bottom_k: 1
-    # 要求最高分和最低分至少差 12，才认为排序可信
-    min_score_diff: 12

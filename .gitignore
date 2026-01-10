@@ -212,3 +212,13 @@ summary_train_v3.xlsx
 /train
 /data
 /data
+.env
+configs/data_diff_sample.yaml
+configs/data_diff_sample.yaml
+configs/default.yaml
+data_diff_sample.csv
+/data_stage1
+log
+/train_stage1
+summary_eval_diff_sample.xlsx
+summary_train_v3.csv

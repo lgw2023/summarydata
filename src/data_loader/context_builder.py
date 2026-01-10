@@ -22,6 +22,10 @@ class ContextSample:
     context: str
     question: str
     meta: Dict[str, Any]
+    system_prompt: Optional[str] = None
+    # 与 system_prompt 同级写出，便于下游追踪 prompt 版本
+    system_prompt_type: Optional[str] = None
+    system_prompt_domain: Optional[str] = None
     reference_answer: Optional[str] = None
 
 
@@ -30,52 +34,63 @@ def build_context_text(sample: Sample) -> str:
     根据当前项目的字段约定构建上下文字符串。
 
     结构大致参考 response_prompt.py 中的说明：
-    - [个人数据]      -> data
-    - [专家建议]      -> suggest
-    - [知识库知识]    -> rag
-    - [课程库]        -> service
-    - [对话历史]      -> last_query + last_answer_phone（若有）
-    - [用户提问]      -> 当前 query
+    - 【个人数据】      -> data
+    - 【专家建议】      -> suggest
+    - 【知识库知识】    -> rag
+    - 【课程库】        -> service（watch 样本不拼接该块）
+    - 【对话历史】      -> last_query + last_answer_{phone|watch}（若有；按 sample.device 选择）
+    - 【当前用户提问】      -> 当前 query
     """
     blocks: List[str] = []
+    device = (getattr(sample, "device", None) or "").strip().lower()
 
     # 个人数据
-    blocks.append("[个人数据]")
+    blocks.append("【个人数据】")
     blocks.append((sample.data or "").strip() or "（无）")
     blocks.append("")  # 空行分隔
 
     # 专家建议
-    blocks.append("[专家建议]")
+    blocks.append("【专家建议】")
     blocks.append((sample.suggest or "").strip() or "（无）")
     blocks.append("")
 
     # 知识库知识
-    blocks.append("[知识库知识]")
+    blocks.append("【知识库知识】")
     blocks.append((sample.rag or "").strip() or "（无）")
     blocks.append("")
 
     # 课程库
-    blocks.append("[课程库]")
-    if sample.service:
-        blocks.append(sample.service.strip())
-    else:
-        blocks.append("（无）")
-    blocks.append("")
+    # watch 样本不需要课程库（采样回复生成时避免引入无关块）
+    if device != "watch":
+        blocks.append("【课程库】")
+        if sample.service:
+            blocks.append(sample.service.strip())
+        else:
+            blocks.append("（无）")
+        blocks.append("")
 
     # 对话历史（当前 Demo 支持上一轮 query + 助手回复）
-    blocks.append("[对话历史]")
-    has_history = bool((getattr(sample, "last_query", None) or "").strip() or (sample.last_answer_phone or "").strip())
+    blocks.append("【对话历史】")
+    last_query = (getattr(sample, "last_query", None) or "").strip()
+    # 按设备选择上一轮助手回复：phone 用 last_answer_phone；watch 用 last_answer_watch；
+    # 若 device 未指定，则优先兼容旧字段 last_answer_phone。
+    if device == "watch":
+        last_answer = (getattr(sample, "last_answer_watch", None) or "").strip()
+    else:
+        last_answer = (getattr(sample, "last_answer_phone", None) or "").strip()
+
+    has_history = bool(last_query or last_answer)
     if has_history:
-        if getattr(sample, "last_query", None):
-            blocks.append(f"user: {sample.last_query.strip()}")
-        if sample.last_answer_phone:
-            blocks.append(f"assistant: {sample.last_answer_phone.strip()}")
+        if last_query:
+            blocks.append(f"user: {last_query}")
+        if last_answer:
+            blocks.append(f"assistant: {last_answer}")
     else:
         blocks.append("（无）")
     blocks.append("")
 
     # 当前用户提问
-    blocks.append("[用户提问]")
+    blocks.append("【当前用户提问】")
     blocks.append(sample.query.strip())
 
     return "\n".join(blocks)
@@ -107,6 +122,12 @@ def build_context_samples(samples: Iterable[Sample]) -> List[ContextSample]:
                 sample_id=sample.sample_id,
                 context=build_context_text(sample),
                 question=sample.query,
+                system_prompt=(getattr(sample, "system_prompt", None) or None),
+                system_prompt_type=(getattr(sample, "system_prompt_type", None) or None),
+                # 统一：不涉及 domain 时写空串（而不是 null），与 generated_responses.jsonl 对齐
+                system_prompt_domain=(
+                    "" if getattr(sample, "system_prompt_domain", None) is None else str(getattr(sample, "system_prompt_domain"))
+                ),
                 meta={
                     "source_row_index": idx,
                     "extra": {
@@ -114,6 +135,9 @@ def build_context_samples(samples: Iterable[Sample]) -> List[ContextSample]:
                         "category_level2": sample.category_level2,
                         "category_level3": sample.category_level3,
                         "domain": sample.domain,
+                        "device": getattr(sample, "device", None),
+                        "base_sample_id": getattr(sample, "base_sample_id", None),
+                        "has_personal_data": bool((sample.data or "").strip()),
                     },
                 },
                 reference_answer=reference_answer,
@@ -130,7 +154,13 @@ def export_context_samples_jsonl(
     """
     output_dir_path = ensure_dir(output_dir)
     output_path = output_dir_path / "context_samples.jsonl"
-    rows = [asdict(sample) for sample in context_samples]
+    # 注意：context_samples.jsonl 仅用于“构建上下文 + 问题 + 元信息”的中间产物，
+    # 不应包含任何参考答案字段（如 reference_answer），避免被误当作训练/评估输入的一部分。
+    rows: List[Dict[str, Any]] = []
+    for sample in context_samples:
+        row = asdict(sample)
+        row.pop("reference_answer", None)
+        rows.append(row)
     write_jsonl(output_path, rows)
     return output_path
 

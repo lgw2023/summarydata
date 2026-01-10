@@ -1,13 +1,13 @@
 pipeline:
   generators:
-    # 实验模型（例如 qwq-32b-preview，经 DashScope OpenAI 兼容接口）
-    - name: experimental
-      model_name: "qwq-32b-preview"
-      base_url_env: "LLM_MODEL_QWQ32_URL"
-      api_key_env: "LLM_MODEL_QWQ32_API_KEY"
-      # temperature: 0.7
-      # top_p: 0.9
-      # max_tokens: 512
+    # # 实验模型（例如 qwq-32b-preview，经 DashScope OpenAI 兼容接口）
+    # - name: experimental
+    #   model_name: "qwq-32b-preview"
+    #   base_url_env: "LLM_MODEL_QWQ32_URL"
+    #   api_key_env: "LLM_MODEL_QWQ32_API_KEY"
+    #   # temperature: 0.7
+    #   # top_p: 0.9
+    #   # max_tokens: 512
 
     # 开源 SOTA 模型（例如 Qwen3 系列，经 DeepInfra / DeepSeek / DashScope OpenAI 兼容接口）
     # - Qwen3-235B（通过 .env 中的 LLM_MODEL_QWEN235_* 配置）
@@ -37,14 +37,14 @@ pipeline:
       # top_p: 0.9
       # max_tokens: 512
 
-    # - Qwen3-30B-A3B（通过 .env 中的 LLM_MODEL_QWEN30_* 配置，经 DashScope OpenAI 兼容接口）
-    - name: open_source
-      model_name: "qwen3-30b-a3b"
-      base_url_env: "LLM_MODEL_QWEN30_URL"
-      api_key_env: "LLM_MODEL_QWEN30_API_KEY"
-      # temperature: 0.7
-      # top_p: 0.9
-      # max_tokens: 512
+    # # - Qwen3-30B-A3B（通过 .env 中的 LLM_MODEL_QWEN30_* 配置，经 DashScope OpenAI 兼容接口）
+    # - name: open_source
+    #   model_name: "qwen3-30b-a3b"
+    #   base_url_env: "LLM_MODEL_QWEN30_URL"
+    #   api_key_env: "LLM_MODEL_QWEN30_API_KEY"
+    #   # temperature: 0.7
+    #   # top_p: 0.9
+    #   # max_tokens: 512
 
     # - DeepSeek-Chat（对话模型，通过 .env 中的 LLM_MODEL_DSCHAT_* 配置）
     - name: open_source
@@ -83,23 +83,24 @@ pipeline:
       # top_p: 0.9
       # max_tokens: 512
 
-    # - Gemini 2.5 Flash（通过 .env 中的 LLM_MODEL_GEMINI25_* 配置，经 DeepInfra OpenAI 兼容接口）
-    - name: closed_source
-      model_name: "google/gemini-2.5-flash"
-      base_url_env: "LLM_MODEL_GEMINI25_URL"
-      api_key_env: "LLM_MODEL_GEMINI25_API_KEY"
-      # temperature: 0.7
-      # top_p: 0.9
-      # max_tokens: 512
+    # # - Gemini 2.5 Flash（通过 .env 中的 LLM_MODEL_GEMINI25_* 配置，经 DeepInfra OpenAI 兼容接口）
+    # - name: closed_source
+    #   model_name: "google/gemini-2.5-flash"
+    #   base_url_env: "LLM_MODEL_GEMINI25_URL"
+    #   api_key_env: "LLM_MODEL_GEMINI25_API_KEY"
+    #   # temperature: 0.7
+    #   # top_p: 0.9
+    #   # max_tokens: 512
 
-    # 参考答案（从 answer_phone / think_phone 抽取，分别作为两条独立候选）
-    - name: reference
-      model_name: "ref_answer_phone"
-      answer_key: "answer_phone"
+    # 参考答案（从输入表格中抽取，分别作为两条独立候选）
+    - name: reference_phone
+      model_name: "sft_answer_phone"
+      answer_key: "sft_answer_phone"
 
-    - name: reference
-      model_name: "ref_think_phone"
-      answer_key: "think_phone"
+    - name: reference_watch
+      model_name: "sft_answer_watch"
+      answer_key: "sft_answer_watch"
+
 
   judges:
     # 使用通用 LLM 作为 LLM-as-judge，模型与 endpoint 从 .env 读取
@@ -111,10 +112,3 @@ pipeline:
       timeout: 60
       max_retries: 30
       backoff_base: 1.0
-
-  ranking:
-    top_k: 1
-    bottom_k: 1
-    # 要求最高分和最低分至少差 12，才认为排序可信
-    min_score_diff: 12
-

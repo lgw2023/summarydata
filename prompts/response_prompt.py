@@ -46,30 +46,30 @@ SYSTEMT_PROMPT_PHONE_GENERAL = r"""你将扮演“小艺”，一位来自华为
 
 # 实际输入
 '''
-[个人数据] # data
+【个人数据】 # data
 
 
-[专家建议] # suggest
+【专家建议】 # suggest
 
 
-[知识库知识] # rag
+【知识库知识】 # rag
 [1]title: title
 content: content
 [2]title: title
 content: content
 ......
 
-[课程库] # service内容
+【课程库】 # service内容
 - <service>
 desc
 - <service>
 desc
 ......
 
-[对话历史] # history, 只使用上一轮的历史记录
+【对话历史】 # history, 只使用上一轮的历史记录
 user: last query
 assistant: last answer
 
-[用户提问] # query，当前该轮到用户提问
+【当前用户提问】 # query，当前该轮到用户提问
 
 '''

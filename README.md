@@ -35,8 +35,6 @@
      - `python scripts/run_pipeline.py --config configs/default.yaml`
 3. 结构化输出数据：
    - `data/processed/samples.jsonl`：包含上下文 + 各模型回复。
-   - `data/processed/judge_results.jsonl`：包含 LLM-as-judge 打分。
-   - `data/processed/ranked_pairs.jsonl`：清洗后的正负样本。
 4. 统计与可视化报告（可选）：
    - `reports/score_stats.xlsx`
    - `reports/score_plots/*.png`
@@ -76,15 +74,12 @@ project_root/
     config/                      # 配置加载 & 校验
     data_loader/                 # Excel -> 样本 & 上下文构建
     generators/                  # 各类模型调用封装
-    judges/                      # LLM-as-judge 封装
     scoring/                     # 打分解析 & 聚合
-    ranking/                     # 排序 & 正负样本抽取
     analysis/                    # 统计分析 & 可视化
     utils/                       # 通用工具
   scripts/
     run_pipeline.py              # 一键跑全流程
     generate_responses.py        # 只跑回复生成
-    run_judge.py                 # 只跑 LLM-as-judge
     analyze_scores.py            # 只跑分析
   reports/
     .gitignore
@@ -193,12 +188,12 @@ DSCHAT_API_KEY = os.getenv("LLM_MODEL_DSCHAT_API_KEY")
 
 - **统一人设与回复策略**：将“小艺”健康管家的人设、语言风格、回答范围与安全边界等一次性固化在系统提示词中，保证不同模型、不同样本下回复风格一致。
 - **约定输入结构**：要求真实调用时按照以下模块化格式组织上下文：
-  - `[个人数据]`（对应 `data.csv` 中与用户画像/状态相关的字段）；
-  - `[专家建议]`（对应规则或专家给出的结构化建议，如 `suggest` 列）；
-  - `[知识库知识]`（对应检索到的 RAG 相关内容，如 `rag` 列，按编号+title+content 组织）；
-  - `[课程库]`（候选课程列表及简要描述）；
-  - `[对话历史]`（上一轮 user/assistant 对话）；
-  - `[用户提问]`（当前轮用户 query）。
+  - `【个人数据】`（对应 `data.csv` 中与用户画像/状态相关的字段）；
+  - `【专家建议】`（对应规则或专家给出的结构化建议，如 `suggest` 列）；
+  - `【知识库知识】`（对应检索到的 RAG 相关内容，如 `rag` 列，按编号+title+content 组织）；
+  - `【课程库】`（候选课程列表及简要描述）；
+  - `【对话历史】`（上一轮 user/assistant 对话）；
+  - `【当前用户提问】`（当前轮用户 query）。
 - **用于采样候选回复**：在实际生成候选答案时，可以将 `SYSTEMT_PROMPT_PHONE_GENERAL` 与按上述结构拼接好的上下文文本合并，作为生成模型的完整输入 prompt，对不同模型（实验模型/开源模型/闭源模型）进行采样，得到多样化的候选回复。
 
 简而言之：`response_prompt.py` 负责“如何喂给模型信息并让它说人话”，`score_prompt.py` 负责“在统一上下文下如何评价这些回复好坏”。下文的 Excel/JSONL 规范可以理解为对这套 `data.csv` + `score_prompt.py` + `response_prompt.py` 方案的工程化抽象。
@@ -237,8 +232,7 @@ class RawSample:
   "meta": {
     "source_row_index": 12,
     "extra": {}
-  },
-  "reference_answer": "..."  // 如果有
+  }
 }
 ```
 
@@ -515,7 +509,8 @@ class RawSample:
 
 **目标：** 对每个样本的候选按 `aggregate_score` 排序，并在排序合理时生成正负样本。
 
-#### 3.7.1 排序实现（`ranker.py`）
+#### 3.7.1 排序实现（`
+ranker.py`）
 
 * [ ] 对每个 `sample_id`，收集所有 `candidate` 的 `aggregate_score`。
 * [ ] 降序排序，赋予 `rank`（从 1 开始）。

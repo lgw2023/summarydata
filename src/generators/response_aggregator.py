@@ -37,6 +37,9 @@ def build_generated_response_rows(
             continue
         row = {
             "sample_id": sample_id,
+            "system_prompt": str(getattr(sample, "system_prompt", "") or ""),
+            "system_prompt_type": str(getattr(sample, "system_prompt_type", "") or ""),
+            "system_prompt_domain": str(getattr(sample, "system_prompt_domain", "") or ""),
             "context": build_context_text(sample),
             "question": sample.query,
             "candidates": [c.to_dict() for c in cand_list],

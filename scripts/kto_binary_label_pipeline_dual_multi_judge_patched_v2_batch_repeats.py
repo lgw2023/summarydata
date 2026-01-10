@@ -570,12 +570,12 @@ def build_modules_block(row: dict, data_json: Dict[str, Any], kb_text: str) -> s
 
     block = []
     block.append("## 模块数据")
-    block.append("[个人数据]\n" + (personal or ""))
-    block.append("[课程库]\n" + (course or ""))
+    block.append("【个人数据】\n" + (personal or ""))
+    block.append("【课程库】\n" + (course or ""))
     if kb:
-        block.append("[知识库知识]\n" + "\n".join([x for x in kb if x]))
+        block.append("【知识库知识】\n" + "\n".join([x for x in kb if x]))
     if expert:
-        block.append("[专家建议]\n" + expert)
+        block.append("【专家建议】\n" + expert)
     if data_json:
         block.append("[data JSON]\n" + json.dumps(data_json, ensure_ascii=False))
     return "\n\n".join(block)
@@ -593,7 +593,7 @@ def build_modules_text(row: dict) -> Tuple[str, str]:
     kb_text = "\n".join([x for x in kb if x])
     personal_data = g("data")
     course_lib = g("service")
-    modules_block = f"[个人数据]\n{personal_data}\n\n[课程库]\n{course_lib}"
+    modules_block = f"【个人数据】\n{personal_data}\n\n【课程库】\n{course_lib}"
     return kb_text, modules_block
 
 def parse_context_string(context: str) -> dict:
@@ -609,12 +609,12 @@ def parse_context_string(context: str) -> dict:
     
     # Split by section markers
     sections = {
-        "[个人数据]": "data",
-        "[专家建议]": "suggest",
-        "[知识库知识]": "rag",
-        "[课程库]": "service",
-        "[对话历史]": "last_answer_phone",
-        "[用户提问]": "query"
+        "【个人数据】": "data",
+        "【专家建议】": "suggest",
+        "【知识库知识】": "rag",
+        "【课程库】": "service",
+        "【对话历史】": "last_answer_phone",
+        "【当前用户提问】": "query"
     }
     
     current_section = None

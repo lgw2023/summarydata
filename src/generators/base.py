@@ -155,12 +155,16 @@ class _OpenAIChatGenerator(BaseGenerator):
         """
         context = build_context_text(sample)
         user_content = (
-            f"{context}\n\n"
-            "请结合以上 [个人数据]、[专家建议]、[知识库知识]、[课程库] 与 [对话历史]，"
-            "以“小艺”健康管家的身份，用中文为用户提供结构清晰、可执行的运动健康建议。"
+            f"{context}\n"
+        )
+        sample_system_prompt = getattr(sample, "system_prompt", None)
+        system_prompt = (
+            str(sample_system_prompt).strip()
+            if isinstance(sample_system_prompt, str) and sample_system_prompt.strip()
+            else self._system_prompt
         )
         return [
-            {"role": "system", "content": self._system_prompt},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ]
 
@@ -443,25 +447,11 @@ class ReferenceGenerator(BaseGenerator):
                 # 显式指定只使用某一列参考答案（如 a_answer / answer_phone）
                 reference_text = sample.reference_answers.get(self._answer_key)
             else:
-                # 兼容两种命名：旧(a_answer/b_answer) 与 新(answer_phone/think_phone)
-                fallback_orders = [
-                    ("a_answer", "b_answer"),
-                    ("answer_phone", "think_phone"),
-                ]
-                for keys in fallback_orders:
-                    for key in keys:
-                        val = sample.reference_answers.get(key)
-                        if val:
-                            reference_text = val
-                            break
-                    if reference_text:
+                # 不在生成器侧写死任何列名；若未指定 answer_key，则取 reference_answers 中第一个非空值
+                for val in sample.reference_answers.values():
+                    if val:
+                        reference_text = val
                         break
-                # 若以上都为空，但 reference_answers 里有其它字段，则取第一个非空值
-                if not reference_text:
-                    for val in sample.reference_answers.values():
-                        if val:
-                            reference_text = val
-                            break
 
         if not reference_text:
             reference_text = "（无参考答案）"
@@ -469,6 +459,28 @@ class ReferenceGenerator(BaseGenerator):
         label = self._answer_key or self.model_name
         content = reference_text
         return self._build_candidate(sample, response=content)
+
+
+class ReferencePhoneGenerator(ReferenceGenerator):
+    """
+    仅用于 phone 样本的参考答案生成器。
+
+    约定：批量生成时会按 sample.device 过滤样本，该类仅声明 target_device。
+    """
+
+    name = "reference_phone"
+    model_type = "reference_phone"
+    target_device = "phone"
+
+
+class ReferenceWatchGenerator(ReferenceGenerator):
+    """
+    仅用于 watch 样本的参考答案生成器。
+    """
+
+    name = "reference_watch"
+    model_type = "reference_watch"
+    target_device = "watch"
 
 
 def build_generators(configs: List[dict]) -> List[BaseGenerator]:
@@ -511,6 +523,20 @@ def build_generators(configs: List[dict]) -> List[BaseGenerator]:
             generators.append(
                 ReferenceGenerator(
                     model_name=extra_cfg.get("model_name", "reference"),
+                    gen_config=extra_cfg,
+                )
+            )
+        elif name == "reference_phone":
+            generators.append(
+                ReferencePhoneGenerator(
+                    model_name=extra_cfg.get("model_name", "reference_phone"),
+                    gen_config=extra_cfg,
+                )
+            )
+        elif name == "reference_watch":
+            generators.append(
+                ReferenceWatchGenerator(
+                    model_name=extra_cfg.get("model_name", "reference_watch"),
                     gen_config=extra_cfg,
                 )
             )
@@ -588,9 +614,29 @@ def generate_candidates(
 
     all_candidates: List[Candidate] = []
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        future_to_gen = {
-            executor.submit(_run_generator_over_samples, gen, samples): gen for gen in generators
-        }
+        # 按生成器声明的 target_device（若存在）过滤样本：
+        # - reference_phone 只对 phone 样本生成
+        # - reference_watch 只对 watch 样本生成
+        future_to_gen: Dict[Any, BaseGenerator] = {}
+        for gen in generators:
+            target_device = getattr(gen, "target_device", None)
+            if isinstance(target_device, str) and target_device.strip():
+                td = target_device.strip().lower()
+                filtered_samples = [
+                    s
+                    for s in samples
+                    if (getattr(s, "device", None) or "").strip().lower() == td
+                ]
+            else:
+                filtered_samples = list(samples)
+
+            if not filtered_samples:
+                continue
+
+            future_to_gen[
+                executor.submit(_run_generator_over_samples, gen, filtered_samples)
+            ] = gen
+
         for future in as_completed(future_to_gen):
             gen = future_to_gen[future]
             try:
