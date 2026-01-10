@@ -12,15 +12,17 @@ from typing import Any, Dict, List, Iterable, Tuple
 
 
 # ==== 项目根目录 / sys.path ====
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# 注意：该脚本位于 <repo>/scripts/ 下，因此项目根目录为 parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
 from src.utils.env import load_env  # noqa: E402
 
-# 复用现有 KTO 打分逻辑中的工具函数
-from src.scoring import (  # noqa: E402
+# 复用现有 KTO 打分逻辑中的工具函数：
+# 该逻辑目前以脚本形式维护在 scripts/ 下，因此直接导入 scripts.kto_* 模块。
+from scripts import (  # noqa: E402
     kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats as kto_mod,
 )
 

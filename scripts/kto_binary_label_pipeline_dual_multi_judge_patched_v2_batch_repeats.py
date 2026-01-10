@@ -17,6 +17,7 @@ python kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch.py \
 """
 
 import os, re, json, time, argparse, math, sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from pathlib import Path
 import pandas as pd
@@ -26,9 +27,10 @@ import concurrent.futures
 import threading
 
 # 允许作为脚本直接运行时也能找到项目根目录下的 src 包
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+# 注意：该脚本位于 <repo>/scripts/ 下，因此项目根目录为 parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.utils.env import load_env
 

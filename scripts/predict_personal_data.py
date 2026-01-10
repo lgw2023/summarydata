@@ -747,20 +747,12 @@ user_prompt = """
 load_env()
 
 # 默认从 .env 读取 QwenMax 的 URL/NAME/API_KEY
+# 注意：不要在 import 阶段强制校验这些变量，否则 --help / 仅分析模式也会直接报错。
 QWENMAX_BASE_URL = os.getenv("LLM_MODEL_QWENMAX_URL")
 QWENMAX_MODEL_NAME = os.getenv("LLM_MODEL_QWENMAX_NAME")
 QWENMAX_API_KEY = os.getenv("LLM_MODEL_QWENMAX_API_KEY")
 # 并行度：每个样本内部逐行并行调用大模型；保持样本/行的输出顺序不变
 LLM_MAX_WORKERS = int(os.getenv("LLM_MAX_WORKERS", "8"))
-
-if OpenAI is None:
-    raise ImportError("openai 包未安装，请先 pip install openai>=1.0")
-if not QWENMAX_BASE_URL:
-    raise ValueError("缺少环境变量 LLM_MODEL_QWENMAX_URL（请在 .env 中配置）")
-if not QWENMAX_MODEL_NAME:
-    raise ValueError("缺少环境变量 LLM_MODEL_QWENMAX_NAME（请在 .env 中配置）")
-if not QWENMAX_API_KEY:
-    raise ValueError("缺少环境变量 LLM_MODEL_QWENMAX_API_KEY（请在 .env 中配置）")
 
 _thread_local = threading.local()
 
@@ -769,6 +761,15 @@ def get_client() -> Any:
     """
     为并行调用准备：给每个线程创建独立的 OpenAI client，避免共享 client 的潜在线程安全问题。
     """
+    if OpenAI is None:
+        raise ImportError("openai 包未安装，请先 pip install openai>=1.0")
+    if not QWENMAX_BASE_URL:
+        raise ValueError("缺少环境变量 LLM_MODEL_QWENMAX_URL（请在 .env 中配置）")
+    if not QWENMAX_MODEL_NAME:
+        raise ValueError("缺少环境变量 LLM_MODEL_QWENMAX_NAME（请在 .env 中配置）")
+    if not QWENMAX_API_KEY:
+        raise ValueError("缺少环境变量 LLM_MODEL_QWENMAX_API_KEY（请在 .env 中配置）")
+
     c = getattr(_thread_local, "client", None)
     if c is None:
         c = OpenAI(api_key=QWENMAX_API_KEY, base_url=QWENMAX_BASE_URL)
