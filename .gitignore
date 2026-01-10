@@ -208,7 +208,6 @@ __marimo__/
 generated_responses.jsonl.bak
 summary_train_v3.xlsx
 /.idea
-/data
 /train
 .env
 configs/data_diff_sample.yaml
