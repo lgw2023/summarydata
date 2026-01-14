@@ -87,9 +87,9 @@ def aggregate(person_datas: list[str]) -> None:
             print(f"\033[92m  {'{'}\033[0m")
             print(f"\033[92m    'time': {time_obj},\033[0m")
             print(f"\033[92m    'events': {events},\033[0m")
-            print(f"\033[92m    'summary': {summary},\033[0m")
+            print(f"\033[92m    'summary': '{summary}',\033[0m")
             print(f"\033[92m    'fallback': {fallback},\033[0m")
-            print(f"\033[92m  {'}'}\033[0m")
+            print(f"\033[92m  {'},'}\033[0m")
         print(f"\033[92m]\033[0m")
 
     return patterns_all, dataframes, wide_tables, markdown_tables, time_jsons
