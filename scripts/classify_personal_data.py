@@ -73,10 +73,10 @@ def aggregate(person_datas: list[str]) -> None:
     # 解析：若干 PersonalDataPattern 列表 -> 结构化列表 / JSONL
     print("\n" + "=" * 26 + " aggregate_time_json 示例 patterns[0] 聚合结果 " + "=" * 26)
     print(f"原始数据:\n{person_datas[0]}\n")
-    buckets = []
+    time_jsons = []
     for i in range(len(patterns_all)):
-        buckets.append(aggregate_patterns_by_timejson(patterns_all[i], include_unknown_time=True, add_summary_text=True))
-    for b in [buckets[0]]:
+        time_jsons.append(aggregate_patterns_by_timejson(patterns_all[i], include_unknown_time=True, add_summary_text=True))
+    for b in [time_jsons[0]]:
         print(f"\033[92m[\033[0m")
         for i in range(len(b)):
             # print(f"\033[92m{b[i]}\033[0m")
@@ -92,7 +92,7 @@ def aggregate(person_datas: list[str]) -> None:
             print(f"\033[92m  {'}'}\033[0m")
         print(f"\033[92m]\033[0m")
 
-    return dataframes, wide_tables, markdown_tables, buckets
+    return dataframes, wide_tables, markdown_tables, time_jsons
 
 
 if __name__ == "__main__":
@@ -125,4 +125,4 @@ if __name__ == "__main__":
         raise ValueError(f"列 {data_col!r} 中没有可用的非空文本：{_xlsx_path}")
 
 
-    dataframes, wide_tables, markdown_tables, buckets = aggregate(person_datas=person_datas)
+    dataframes, wide_tables, markdown_tables, time_jsons = aggregate(person_datas=person_datas)
