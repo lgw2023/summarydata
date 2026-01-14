@@ -48,7 +48,7 @@ _SPLIT_RE = re.compile(r"[，,]\s*")
 _FIRST_NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
 
 _FALLBACK_PARSERS: list[tuple[str, str, Callable[[str], list[PersonalDataPattern]]]] = [
-    ("单指标的统计复合记录", "单指标的统计复合记录(全量兜底)", lambda s: SingleMetricStatsRecord.from_raw_personal_data(s)),
+    ("单指标的明细汇总记录", "单指标的明细汇总记录(全量兜底)", lambda s: SingleMetricStatsRecord.from_raw_personal_data(s)),
     ("周期数值对比记录", "周期数值对比记录(全量兜底)", lambda s: PeriodValueCompareRecord.from_raw_personal_data(s)),
     ("单日期数值多项总结", "单日期数值多项总结(全量兜底)", lambda s: SingleDateValueMultiSummaryRecord.from_raw_personal_data(s)),
     ("单日期数值单项总结", "单日期数值单项总结(全量兜底)", lambda s: SingleDateValueSingleSummaryRecord.from_raw_personal_data(s)),
@@ -245,7 +245,7 @@ _STYLE_ITEM_PARSERS: dict[str, Callable[[Mapping[str, Any], str | None], Persona
     "单日期文本总结": _parse_style_item_single_date_text,
     "无时间日期的文本总结": _parse_style_item_no_timestamp_text,
     "无时间日期的数值总结": _parse_style_item_no_date_value,
-    "单指标的统计复合记录": _parse_style_item_stats_composite,
+    "单指标的明细汇总记录": _parse_style_item_stats_composite,
     "单日期数值多项总结": _parse_style_item_single_date_value_multi,
 }
 
@@ -710,8 +710,8 @@ def route_raw_personal_data_to_dataclass(
     # 1) 强特征：多日期统计复合（带“指标: [..]”）
     if _looks_like_stats_composite(raw):
         got = _try_parser(
-            "单指标的统计复合记录",
-            "单指标的统计复合记录",
+            "单指标的明细汇总记录",
+            "单指标的明细汇总记录",
             lambda s: SingleMetricStatsRecord.from_raw_personal_data(s),
         )
         if got is not None:

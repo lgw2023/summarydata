@@ -101,7 +101,7 @@ def aggregate_patterns_to_formatted_text(
     参数：
     - max_rows_per_table: 每个实体类型最多输出多少行（防止极端大文本）
     - max_cell_len: 单元格截断长度（仅影响格式化展示，不改数据）
-    - include_loose_lines: 是否在主体输出后追加“零散/无法聚合”的单行列表
+    - include_loose_lines: 是否在主体输出后追加“零散或无法聚合”的单行列表
     - loose_line_max_len: 零散单行的截断长度
     """
     objs = list(patterns or [])
@@ -404,7 +404,7 @@ def aggregate_patterns_to_formatted_text(
                 )
             return rows
 
-        # 单指标的统计复合记录：输出两类行（明细/汇总）
+        # 单指标的明细汇总记录：输出两类行（明细/汇总）
         if isinstance(obj, SingleMetricStatsRecord):
             core = getattr(obj, "核心字段", None)
             metric = _safe_str(getattr(core, "指标名称", "")) if core else ""
@@ -737,7 +737,7 @@ def aggregate_patterns_to_formatted_text(
 
     def _pivot_stats_composite_detail_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
         """
-        将"单指标的统计复合记录"的明细部分透视成宽表：
+        将"单指标的明细汇总记录"的明细部分透视成宽表：
           类别/日期/指标/数值/单位
         透视成：
           日期 + 各指标列
@@ -858,7 +858,7 @@ def aggregate_patterns_to_formatted_text(
     
     def _format_stats_composite_summary_as_sentences(rows: list[dict[str, str]]) -> list[str]:
         """
-        将"单指标的统计复合记录"的汇总部分转换为句子列表。
+        将"单指标的明细汇总记录"的汇总部分转换为句子列表。
         """
         summary_rows = [r for r in rows if _safe_str(r.get("类别", "")) == "汇总"]
         if not summary_rows:
@@ -956,11 +956,11 @@ def aggregate_patterns_to_formatted_text(
     # 1) 聚合为 tables
     tables: dict[str, list[dict[str, str]]] = {}
     loose: list[str] = []
-    # 单独处理"单指标的统计复合记录"，保留对象边界信息
+    # 单独处理"单指标的明细汇总记录"，保留对象边界信息
     stats_composite_objs: list[PersonalDataPattern] = []
     for obj in objs:
         et = _safe_str(getattr(obj, "实体类型", "")) or "未定义"
-        if et == "单指标的统计复合记录":
+        if et == "单指标的明细汇总记录":
             stats_composite_objs.append(obj)
             continue
         rows = _rows_from_obj(obj)
@@ -975,11 +975,11 @@ def aggregate_patterns_to_formatted_text(
     # - 周期数值单项总结：若日期范围一致，去掉重复列
     # - 周期文本总结 / 周期数值多项总结：若日期范围一致，去掉重复列（与单项总结一致）
     # - 单日期文本总结 / 单日期数值多项总结 / 单日期数值单项总结：若日期一致，去掉重复列
-    # - 单指标的统计复合记录：明细部分透视成宽表，汇总部分按对象分组单独处理
+    # - 单指标的明细汇总记录：明细部分透视成宽表，汇总部分按对象分组单独处理
     table_title_suffix: dict[str, str] = {}
     stats_composite_summary_sentences_by_obj: dict[str, list[list[str]]] = {}
     
-    # 处理"单指标的统计复合记录"：分别处理每个对象
+    # 处理"单指标的明细汇总记录"：分别处理每个对象
     if stats_composite_objs:
         all_detail_rows: list[dict[str, str]] = []
         summary_sentences_by_obj: list[list[str]] = []
@@ -999,8 +999,8 @@ def aggregate_patterns_to_formatted_text(
         
         # 透视所有明细行
         if all_detail_rows:
-            tables["单指标的统计复合记录"] = _pivot_stats_composite_detail_rows(all_detail_rows)
-            stats_composite_summary_sentences_by_obj["单指标的统计复合记录"] = summary_sentences_by_obj
+            tables["单指标的明细汇总记录"] = _pivot_stats_composite_detail_rows(all_detail_rows)
+            stats_composite_summary_sentences_by_obj["单指标的明细汇总记录"] = summary_sentences_by_obj
     
     if "单指标的明细记录" in tables:
         tables["单指标的明细记录"] = _pivot_single_metric_detail_rows(tables["单指标的明细记录"])
@@ -1184,8 +1184,8 @@ def aggregate_patterns_to_formatted_text(
             prefer_cols = ["日期", "时间"] + metric_cols
             # 兼容：若还有其它列（非常规），后面仍会走 more 补齐
         
-        # "单指标的统计复合记录(宽表)"：把动态指标列按更自然的顺序输出
-        if et == "单指标的统计复合记录":
+        # "单指标的明细汇总记录(宽表)"：把动态指标列按更自然的顺序输出
+        if et == "单指标的明细汇总记录":
             metric_order = _METRIC_ORDER_STATS_COMPOSITE
             order_map = {name: i for i, name in enumerate(metric_order)}
 
@@ -1229,8 +1229,8 @@ def aggregate_patterns_to_formatted_text(
             parts.append("| " + " | ".join(_cell(r.get(c, "")) for c in all_cols) + " |")
         parts.append("")  # 空行分隔
         
-        # 单指标的统计复合记录：在表格后输出汇总句子（按对象分组）
-        if et == "单指标的统计复合记录" and et in stats_composite_summary_sentences_by_obj:
+        # 单指标的明细汇总记录：在表格后输出汇总句子（按对象分组）
+        if et == "单指标的明细汇总记录" and et in stats_composite_summary_sentences_by_obj:
             obj_summary_groups = stats_composite_summary_sentences_by_obj[et]
             for obj_summary_sentences in obj_summary_groups:
                 if obj_summary_sentences:
@@ -1240,7 +1240,7 @@ def aggregate_patterns_to_formatted_text(
                 parts.append("")  # 空行分隔
 
     if include_loose_lines and loose:
-        parts.append("### 零散/无法聚合")
+        parts.append("### 零散或无法聚合")
         for ln in loose:
             parts.append(f"- {ln}")
 

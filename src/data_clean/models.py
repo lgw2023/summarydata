@@ -14,7 +14,7 @@ from __future__ import annotations
   - 周期数值多项总结
   - 无时间日期的文本总结
   - 无时间日期的数值总结
-  - 单指标的统计复合记录
+  - 单指标的明细汇总记录
 - 额外提供“兜底类”：用于保存无法解析的数据样式，保留原始个人数据纯文本。
 
 说明：
@@ -1422,7 +1422,7 @@ class NoDateValueSummaryRecord(PersonalDataPatternBase):
         return [parsed]
 
 
-# ========= 单指标的统计复合记录 =========
+# ========= 单指标的明细汇总记录 =========
 @dataclass(frozen=True)
 class StatsCompositeDataItem:
     日期: str
@@ -1470,7 +1470,7 @@ class SingleMetricStatsRecord(PersonalDataPatternBase):
         统计状态描述列表: Sequence[str] | None = None,
         原始个人数据: str | None = None,
     ) -> None:
-        object.__setattr__(self, "实体类型", "单指标的统计复合记录")
+        object.__setattr__(self, "实体类型", "单指标的明细汇总记录")
         object.__setattr__(self, "核心字段", 核心字段)
         object.__setattr__(self, "日期列表", list(日期列表 or []))
         object.__setattr__(self, "数值列表", list(数值列表 or []))
@@ -1559,7 +1559,7 @@ class SingleMetricStatsRecord(PersonalDataPatternBase):
         单位: str | None = None,
     ) -> list["SingleMetricStatsRecord | UnparsedRawPersonalData"]:
         """
-        从“单指标的统计复合记录”原始一行文本中抽取：
+        从“单指标的明细汇总记录”原始一行文本中抽取：
         - 明细：[(日期, 数值)] 1~N 条
         - 汇总：[(统计指标名称, 数值, 状态描述)] 1~N 条
 
@@ -2085,7 +2085,7 @@ _RECOVER_BY_ENTITY_TYPE: dict[str, Callable[[Any], str]] = {
     "单日期文本总结": _recover_single_date_text_summary_record,
     "无时间日期的文本总结": _recover_no_timestamp_text_summary_record,
     "无时间日期的数值总结": _recover_no_date_value_summary_record,
-    "单指标的统计复合记录": _recover_single_metric_stats_record,
+    "单指标的明细汇总记录": _recover_single_metric_stats_record,
     "单日期数值多项总结": _recover_single_date_value_multi_summary_record,
 }
 
@@ -3588,7 +3588,7 @@ def _parse_no_date_value_summary_line(
     )
 
 
-# ========= 解析：单指标的统计复合记录（从原始一行文本抽取明细+汇总） =========
+# ========= 解析：单指标的明细汇总记录（从原始一行文本抽取明细+汇总） =========
 _STATS_COMP_HEAD_RE = re.compile(
     r"^\s*(?P<metric>.+?)\s*[:：]\s*(?P<rest>.+?)\s*$"
 )
@@ -3661,12 +3661,12 @@ def _parse_stats_composite_line(
     单位: str | None = None,
 ) -> SingleMetricStatsRecord | UnparsedRawPersonalData:
     """
-    将“单指标的统计复合记录”的原始一行文本解析为 `SingleMetricStatsRecord`。
+    将“单指标的明细汇总记录”的原始一行文本解析为 `SingleMetricStatsRecord`。
     若无法解析到任何记录，返回 `UnparsedRawPersonalData`。
     """
     raw = str(raw_line or "").strip()
     if not raw:
-        return UnparsedRawPersonalData(个人数据=raw, 原因="空行，无法解析为单指标的统计复合记录")
+        return UnparsedRawPersonalData(个人数据=raw, 原因="空行，无法解析为单指标的明细汇总记录")
 
     m_head = _STATS_COMP_HEAD_RE.match(raw)
     if not m_head:

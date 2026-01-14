@@ -28,9 +28,9 @@ test_UnparsedRawPersonalData = [
 ]
 
 
-#   - 单指标的统计复合记录
+#   - 单指标的明细汇总记录
 """
-python scripts/predict_personal_data.py --raw-data data_diff_sample.csv --extract-entity-type "单指标的统计复合记录" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
+python scripts/predict_personal_data.py --raw-data data_diff_sample.csv --extract-entity-type "单指标的明细汇总记录" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
 """
 test_SingleMetricStatsRecord = [
 "零星小睡时长：[2月10日56分钟, 2月11日56分钟, 2月12日54分钟, 2月13日47分钟, 2月14日52分钟, 2月15日57分钟, 2月16日54分钟]，平均零星小睡时长52分钟偏高，最低零星小睡时长47分钟偏高，最高零星小睡时长57分钟偏高",

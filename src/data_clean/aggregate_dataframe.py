@@ -29,6 +29,7 @@ def aggregate_patterns_to_dataframes(
     *,
     max_rows_per_table: int = 300,
     include_loose_lines: bool = True,
+    data_type_col: str | None = "data_type",
 ) -> list["pd.DataFrame"]:
     """
     聚合/汇总一个数据类列表，并输出为 pandas DataFrame 列表（每个表一个 DataFrame）。
@@ -41,9 +42,10 @@ def aggregate_patterns_to_dataframes(
       - entity_type: 实体类型（表类型）
       - title: 建议展示标题（可能包含日期/日期范围）
       - date_or_range: 若该表是“单日期/同日期范围”压缩产生，会填充该值
-      - range1/range2: 对比表（周期数值对比记录）会填充
-      - summary_sentences_by_obj: 单指标的统计复合记录的汇总句（按对象分组）
-    - 若 include_loose_lines=True，会额外返回一个 entity_type="零散/无法聚合" 的 DataFrame（单列 raw）。
+      - date_range1/date_range2: 对比表（周期数值对比记录）会填充
+      - summary_sentences_by_obj: 单指标的明细汇总记录的汇总句（按对象分组）
+    - 另外会在 DataFrame 里额外写入一列 “数据类型”（默认列名可配），便于导出 Excel / 直接筛选。
+    - 若 include_loose_lines=True，会额外返回一个 entity_type="零散或无法聚合" 的 DataFrame（单列 raw）。
     """
     try:
         import pandas as pd  # type: ignore
@@ -111,9 +113,9 @@ def aggregate_patterns_to_dataframes(
         "状态": "status",
         "开始": "start_date",
         "结束": "end_date",
-        "范围1": "range1",
+        "范围1": "date_range1",
         "值1": "value1",
-        "范围2": "range2",
+        "范围2": "date_range2",
         "值2": "value2",
         "逻辑": "logic",
         "差异": "diff",
@@ -141,10 +143,10 @@ def aggregate_patterns_to_dataframes(
                 r2["start_date"] = _normalize_date_to_iso(r2.get("start_date", ""))
             if "end_date" in r2:
                 r2["end_date"] = _normalize_date_to_iso(r2.get("end_date", ""))
-            if "range1" in r2:
-                r2["range1"] = _normalize_date_range_like_to_iso(r2.get("range1", ""))
-            if "range2" in r2:
-                r2["range2"] = _normalize_date_range_like_to_iso(r2.get("range2", ""))
+            if "date_range1" in r2:
+                r2["date_range1"] = _normalize_date_range_like_to_iso(r2.get("date_range1", ""))
+            if "date_range2" in r2:
+                r2["date_range2"] = _normalize_date_range_like_to_iso(r2.get("date_range2", ""))
 
             # 补齐常用字段（便于下游稳定消费；不会强行覆盖已有值）
             if "time" in r2 and not r2.get("time"):
@@ -155,8 +157,27 @@ def aggregate_patterns_to_dataframes(
             out_rows.append(r2)
 
         # 尝试对 time-series 友好的排序（仅当存在 date 列时）
+        #
+        # 额外规则：若存在 category（如“明细/汇总”），希望“明细”排在前、“汇总”排在后，
+        # 避免汇总行 date 为空导致排序时跑到最前面。
         if any(("date" in rr) for rr in out_rows):
-            out_rows = sorted(out_rows, key=lambda rr: (rr.get("date", ""), rr.get("time", ""), rr.get("metric", "")))
+            def _cat_rank(cat: str) -> int:
+                c = (cat or "").strip()
+                if c in ("明细", "detail"):
+                    return 0
+                if c in ("汇总", "summary"):
+                    return 1
+                return 2
+
+            out_rows = sorted(
+                out_rows,
+                key=lambda rr: (
+                    _cat_rank(rr.get("category", "")),
+                    rr.get("date", ""),
+                    rr.get("time", ""),
+                    rr.get("metric", ""),
+                ),
+            )
 
         return out_rows
 
@@ -775,7 +796,7 @@ def aggregate_patterns_to_dataframes(
     stats_composite_objs: list[PersonalDataPattern] = []
     for obj in objs:
         et = _safe_str(getattr(obj, "实体类型", "")) or "未定义"
-        if et == "单指标的统计复合记录":
+        if et == "单指标的明细汇总记录":
             stats_composite_objs.append(obj)
             continue
         rows = _rows_from_obj(obj)
@@ -792,7 +813,7 @@ def aggregate_patterns_to_dataframes(
     stats_composite_summary_sentences_by_obj: dict[str, list[list[str]]] = {}
 
     if stats_composite_objs:
-        all_detail_rows: list[dict[str, str]] = []
+        all_rows: list[dict[str, str]] = []
         summary_sentences_by_obj: list[list[str]] = []
         for obj in stats_composite_objs:
             rows = _rows_from_obj(obj)
@@ -801,11 +822,13 @@ def aggregate_patterns_to_dataframes(
                     loose.append(_loose_line(obj))
                 continue
             summary_sentences_by_obj.append(_format_stats_composite_summary_as_sentences(rows))
-            all_detail_rows.extend([r for r in rows if _safe_str(r.get("类别", "")) == "明细"])
-        if all_detail_rows:
-            # 长表：保留明细行，不再做宽表透视
-            tables["单指标的统计复合记录"] = all_detail_rows
-            stats_composite_summary_sentences_by_obj["单指标的统计复合记录"] = summary_sentences_by_obj
+            # 之前只保留“明细”会导致 DataFrame 丢失“汇总”信息；
+            # 这里保留明细+汇总两类行，由 category 列区分。
+            all_rows.extend(rows)
+        if all_rows:
+            # 长表：保留明细+汇总行，不再做宽表透视
+            tables["单指标的明细汇总记录"] = all_rows
+            stats_composite_summary_sentences_by_obj["单指标的明细汇总记录"] = summary_sentences_by_obj
 
     if "单指标的明细记录" in tables:
         # 长表：不再做宽表透视（原先会把“不同指标” pivot 成多列）
@@ -830,20 +853,226 @@ def aggregate_patterns_to_dataframes(
         # 统一：长表 + 列名规范化 + 日期 ISO 化
         rows2 = _normalize_rows_for_long_table(rows)
         df = pd.DataFrame(rows2)
+        # 显式列：数据类型（= entity_type），便于导出后直接筛选；不覆盖已有同名列
+        if data_type_col is not None:
+            col = str(data_type_col).strip()
+            if col and col not in set(df.columns):
+                try:
+                    df.insert(0, col, et)
+                except Exception:
+                    df[col] = et
         df.attrs["entity_type"] = et
         df.attrs["title"] = _make_title(et)
-        if et == "单指标的统计复合记录" and et in stats_composite_summary_sentences_by_obj:
+        if et == "单指标的明细汇总记录" and et in stats_composite_summary_sentences_by_obj:
             df.attrs["summary_sentences_by_obj"] = stats_composite_summary_sentences_by_obj[et]
         out.append(df)
 
     if include_loose_lines and loose:
         df_loose = pd.DataFrame({"raw": loose})
-        df_loose.attrs["entity_type"] = "零散/无法聚合"
-        df_loose.attrs["title"] = "零散/无法聚合"
+        df_loose.attrs["entity_type"] = "零散或无法聚合"
+        df_loose.attrs["title"] = "零散或无法聚合"
         out.append(df_loose)
 
     return out
 
 
-__all__ = ["aggregate_patterns_to_dataframes"]
+def aggregate_dataframes_to_table(
+    dfs: Sequence["pd.DataFrame"],
+    *,
+    include_loose_lines: bool = True,
+    fillna: str | None = "",
+    entity_type_col: str = "entity_type",
+    data_type_col: str | None = "data_type",
+    title_col: str = "title",
+    table_idx_col: str = "table_idx",
+    row_idx_col: str = "row_idx",
+    unavailable_token: str = "不适用",
+    empty_token: object | None = None,
+) -> "pd.DataFrame":
+    """
+    将 `aggregate_patterns_to_dataframes()` 的“多个 DataFrame（按实体类型分表）”合并成一个统一表。
+
+    目标：
+    - **把 11 种数据类型 + 1 种无法解析（零散或无法聚合）**统一放到一个 DataFrame 里；
+    - 不强行把不同类型“硬 pivot 成同一套业务列”，而是采用“列的并集”形成一个**宽 schema**：
+      同一行只会填充该类型相关列，其它列为空（可用 fillna 控制）。
+
+    参数：
+    - include_loose_lines: 是否保留 entity_type="零散或无法聚合" 的行
+    - fillna: 统一填充缺失值；设为 None 则保留 NaN
+    - entity_type_col/title_col: 将 df.attrs 中的元信息写入列（便于下游单表消费/筛选）
+    - data_type_col: 额外写入“数据类型”列（默认列名为中文），其值与 entity_type 相同；设为 None 关闭
+    - table_idx_col/row_idx_col: 记录来源表序号与行序号，便于回溯
+    - unavailable_token: 对该实体类型“不适用”的列填充值（用于区分“不适用” vs “空值”）
+    - empty_token: 对该实体类型“适用但该条记录为空/缺失”的列填充值；设为 None 表示使用 pandas 标准缺失值 `pd.NA`
+    """
+    try:
+        import pandas as pd  # type: ignore
+    except Exception as e:  # pragma: no cover
+        raise ImportError("需要安装 pandas 才能使用 aggregate_dataframes_to_table（requirements.txt 已包含 pandas）。") from e
+
+    # 统一宽表 schema（业务列固定集合；元信息列名可配置）
+    _BUSINESS_COLS: list[str] = [
+        "date",
+        "time",
+        "start_date",
+        "end_date",
+        "date_range1",
+        "date_range2",
+        "category",
+        "metric",
+        "value",
+        "unit",
+        "status",
+        "value1",
+        "value2",
+        "logic",
+        "diff",
+        "raw",
+    ]
+
+    def _full_schema_cols() -> list[str]:
+        cols: list[str] = [entity_type_col]
+        dtc = None if data_type_col is None else str(data_type_col).strip()
+        if dtc and dtc != entity_type_col:
+            cols.append(dtc)
+        cols.extend([title_col, table_idx_col, row_idx_col, *_BUSINESS_COLS])
+        return cols
+
+    def _applicable_business_cols(et: str) -> set[str]:
+        """
+        定义：对某个实体类型来说，哪些业务列“可用”（应该填真实值或 empty_token），
+        其余业务列视为“不适用”（填 unavailable_token）。
+        """
+        t = (et or "").strip()
+        if t == "零散或无法聚合":
+            return {"raw"}
+        if t == "单指标的明细记录":
+            return {"date", "time", "metric", "value", "unit"}
+        if t == "周期数值单项总结":
+            return {"start_date", "end_date", "metric", "value", "unit"}
+        if t == "周期文本总结":
+            return {"start_date", "end_date", "metric", "status"}
+        if t == "周期数值对比记录":
+            return {"date_range1", "value1", "date_range2", "value2", "logic", "diff", "metric"}
+        if t == "周期数值多项总结":
+            return {"start_date", "end_date", "metric", "value", "unit", "status"}
+        if t == "单日期数值单项总结":
+            return {"date", "metric", "value", "unit", "status"}
+        if t == "单日期文本总结":
+            return {"date", "metric", "status"}
+        if t == "无时间日期的文本总结":
+            return {"metric", "status"}
+        if t == "无时间日期的数值总结":
+            return {"metric", "value", "unit", "status"}
+        if t == "单指标的明细汇总记录":
+            # 新版 df：保留“明细+汇总”行，以 category 区分
+            return {"category", "date", "metric", "value", "unit", "status"}
+        if t == "单日期数值多项总结":
+            return {"date", "metric", "value", "unit", "status"}
+        # 未知类型：保守策略 —— 仅把该 df 里出现过的业务列视为“可用”
+        return set()
+
+    def _is_empty_cell(v: object) -> bool:
+        if v is None:
+            return True
+        try:
+            if pd.isna(v):  # type: ignore[arg-type]
+                return True
+        except Exception:
+            pass
+        if isinstance(v, str) and v.strip() == "":
+            return True
+        return False
+
+    _EMPTY = pd.NA if empty_token is None else empty_token
+
+    xs = list(dfs or [])
+    if not xs:
+        out = pd.DataFrame()
+        out.attrs["entity_type"] = "ALL"
+        out.attrs["title"] = "ALL"
+        # 即使为空也输出固定 schema
+        out = out.reindex(columns=_full_schema_cols())
+        return out
+
+    frames: list[pd.DataFrame] = []
+    for table_idx, df in enumerate(xs):
+        if df is None:
+            continue
+        df2 = df.copy()
+        df2 = df2.reset_index(drop=True)
+
+        attrs = getattr(df, "attrs", {}) or {}
+        et = str(attrs.get("entity_type") or "").strip() or "未定义"
+        title = str(attrs.get("title") or "").strip() or et
+
+        # 元信息列（写入每一行，便于合并后筛选）
+        df2[entity_type_col] = et
+        dtc = None if data_type_col is None else str(data_type_col).strip()
+        if dtc and dtc != entity_type_col:
+            df2[dtc] = et
+        df2[title_col] = title
+        df2[table_idx_col] = int(table_idx)
+        df2[row_idx_col] = list(range(len(df2)))
+
+        # 业务列全量对齐 + 不适用/空值区分
+        applicable = _applicable_business_cols(et)
+        # 未知类型：用 df 中已出现的业务列作为“可用列”
+        if not applicable and et not in (
+            "单指标的明细记录",
+            "单指标的明细汇总记录",
+            "周期数值对比记录",
+            "周期数值单项总结",
+            "周期数值多项总结",
+            "周期文本总结",
+            "单日期数值单项总结",
+            "单日期数值多项总结",
+            "单日期文本总结",
+            "无时间日期的文本总结",
+            "无时间日期的数值总结",
+            "零散或无法聚合",
+        ):
+            applicable = {c for c in _BUSINESS_COLS if c in df2.columns}
+
+        for col in _BUSINESS_COLS:
+            if col not in df2.columns:
+                df2[col] = pd.NA
+            if col in applicable:
+                # 适用列：空/缺失 -> empty_token；其余值保留
+                df2[col] = df2[col].apply(lambda x: _EMPTY if _is_empty_cell(x) else x)
+            else:
+                # 不适用列：统一标记
+                df2[col] = unavailable_token
+
+        frames.append(df2)
+
+    if not frames:
+        out = pd.DataFrame()
+        out.attrs["entity_type"] = "ALL"
+        out.attrs["title"] = "ALL"
+        out = out.reindex(columns=_full_schema_cols())
+        return out
+
+    out = pd.concat(frames, ignore_index=True, sort=False)
+
+    # 过滤 loose 表（无法解析/零散行）
+    if not include_loose_lines and entity_type_col in out.columns:
+        out = out[out[entity_type_col] != "零散或无法聚合"].reset_index(drop=True)
+
+    if fillna is not None:
+        out = out.fillna(fillna)
+
+    # 固定 schema 列永远放在最前面，其余列保持原顺序追加（兼容未来扩展）
+    schema_cols = _full_schema_cols()
+    extra_cols = [c for c in list(out.columns) if c not in set(schema_cols)]
+    cols = [c for c in schema_cols if c in out.columns] + extra_cols
+    out = out.loc[:, cols]
+
+    out.attrs["entity_type"] = "ALL"
+    out.attrs["title"] = "ALL"
+    return out
+
+
+__all__ = ["aggregate_patterns_to_dataframes", "aggregate_dataframes_to_table"]
 

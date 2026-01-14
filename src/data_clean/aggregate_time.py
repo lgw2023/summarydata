@@ -29,7 +29,7 @@ from .normalize import (
 )
 
 
-def aggregate_patterns_by_time(
+def aggregate_patterns_by_timejson(
     patterns: Sequence[PersonalDataPattern],
     *,
     include_unknown_time: bool = True,
@@ -128,24 +128,6 @@ def aggregate_patterns_by_time(
         out.append(row)
 
     return out
-
-
-def aggregate_patterns_to_time_jsonl(
-    patterns: Sequence[PersonalDataPattern],
-    *,
-    include_unknown_time: bool = True,
-    add_summary_text: bool = True,
-    ensure_ascii: bool = False,
-) -> str:
-    """
-    将数据类列表按时间聚合，并输出为 JSONL 字符串（每行一个 JSON object）。
-    """
-    items = aggregate_patterns_by_time(
-        patterns,
-        include_unknown_time=include_unknown_time,
-        add_summary_text=add_summary_text,
-    )
-    return "\n".join(json.dumps(x, ensure_ascii=ensure_ascii) for x in items) + ("\n" if items else "")
 
 
 def _explode_pattern_to_time_items(obj: PersonalDataPattern) -> list[dict[str, Any]]:
@@ -457,9 +439,33 @@ def _explode_pattern_to_time_items(obj: PersonalDataPattern) -> list[dict[str, A
             )
             items.append({"time": time_info, "event": ev})
 
-        # 汇总：没有日期，作为 unknown fallback（保持信息不丢）
-        if list(getattr(obj, "统计指标名称列表", []) or []):
-            items.append({"time": {"type": "unknown", "label": "", "bucket_key": "unknown"}, "fallback": _fallback_payload(obj)})
+        # 汇总：原始文本的末尾统计项通常不带日期，但可由明细日期列表推断周期 [min_date, max_date]。
+        # 需求：不要落到 unknown/fallback，而是按 period 时间桶输出为 events（对齐 PeriodValuemMultiSummaryRecord 的语义）。
+        sum_names = list(getattr(obj, "统计指标名称列表", []) or [])
+        sum_vals = list(getattr(obj, "统计数值列表", []) or [])
+        sum_sts = list(getattr(obj, "统计状态描述列表", []) or [])
+        n_s = max(len(sum_names), len(sum_vals), len(sum_sts))
+        if n_s > 0:
+            period_time = _infer_period_bucket_from_dates(ds)
+            if period_time is None:
+                # 极端兜底：确实无法推断日期范围时，也按 unknown 输出事件（仍避免 fallback）
+                period_time = {"type": "unknown", "label": "", "bucket_key": "unknown"}
+            for i in range(n_s):
+                nm = str(sum_names[i] if i < len(sum_names) else "").strip()
+                sv = str(sum_vals[i] if i < len(sum_vals) else "").strip()
+                st = str(sum_sts[i] if i < len(sum_sts) else "").strip()
+                if not (nm or sv or st):
+                    continue
+                sv2 = _normalize_value_for_json(sv, unit, vt)
+                ev = _event_obj(
+                    entity_type=et,
+                    name=nm or None,
+                    value=sv2 if sv2 else None,
+                    unit=unit if unit and unit != "无" else None,
+                    status=st if (st and st != "无" and st != "-") else None,
+                    value_type=str(vt) if vt is not None else None,
+                )
+                items.append({"time": period_time, "event": ev})
 
         return items if items else [{"time": {"type": "unknown", "label": "", "bucket_key": "unknown"}, "fallback": _fallback_payload(obj)}]
 
@@ -835,5 +841,35 @@ def _format_bucket_summary(label: str, events: Sequence[Mapping[str, Any]], fall
     return f"{t}，" + "，".join(parts)
 
 
-__all__ = ["aggregate_patterns_by_time", "aggregate_patterns_to_time_jsonl"]
+def _infer_period_bucket_from_dates(dates: Sequence[str]) -> dict[str, Any] | None:
+    """
+    从一组“中文日期 token”（可能含年份或不含）推断一个 period 时间桶：
+    - start = 最小日期
+    - end = 最大日期
+    返回值结构对齐 `_time_bucket_from_period`。
+
+    说明：这里不尝试补年份，只做排序与范围格式化。
+    """
+    ds = [str(d or "").strip() for d in list(dates or [])]
+    # 过滤明显的缺失占位
+    cleaned: list[str] = []
+    for d in ds:
+        if not d:
+            continue
+        dn = _normalize_date_cn(d)
+        if not dn:
+            continue
+        if _is_missing_token(dn):
+            continue
+        cleaned.append(dn)
+    if not cleaned:
+        return None
+
+    cleaned_sorted = sorted(cleaned, key=_parse_cn_date_for_sort)
+    st = cleaned_sorted[0]
+    ed = cleaned_sorted[-1]
+    return _time_bucket_from_period(st, ed)
+
+
+__all__ = ["aggregate_patterns_by_timejson"]
 

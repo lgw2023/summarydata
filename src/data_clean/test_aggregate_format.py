@@ -298,7 +298,7 @@ def _self_test_no_date_value_summary_record(lines: Sequence[str]) -> None:
 
 def _self_test_single_metric_stats_record(lines: Sequence[str]) -> None:
     """
-    用于快速验证 `SingleMetricStatsRecord.from_raw_personal_data()` 是否能解析“单指标的统计复合记录”一行文本。
+    用于快速验证 `SingleMetricStatsRecord.from_raw_personal_data()` 是否能解析“单指标的明细汇总记录”一行文本。
     """
     print(f"[self-test] SingleMetricStatsRecord 行数={len(list(lines))}")
     for i, line in enumerate(lines):
@@ -470,7 +470,7 @@ def _self_test_route_raw_personal_data_to_dataclass(
         ("周期文本总结", PeriodTextSummaryRecord, test_PeriodTextSummaryRecord),
         ("周期数值对比记录", PeriodValueCompareRecord, test_PeriodValueCompareRecord),
         ("单指标的明细记录", SingleMetricDetailRecord, test_SingleMetricDetailRecord),
-        ("单指标的统计复合记录", SingleMetricStatsRecord, test_SingleMetricStatsRecord),
+        ("单指标的明细汇总记录", SingleMetricStatsRecord, test_SingleMetricStatsRecord),
         ("未定义", UnparsedRawPersonalData, test_UnparsedRawPersonalData),
     ]
 
@@ -571,7 +571,7 @@ def _self_test_recover_to_raw_data_roundtrip(
         ("周期文本总结", PeriodTextSummaryRecord, test_PeriodTextSummaryRecord),
         ("周期数值对比记录", PeriodValueCompareRecord, test_PeriodValueCompareRecord),
         ("单指标的明细记录", SingleMetricDetailRecord, test_SingleMetricDetailRecord),
-        ("单指标的统计复合记录", SingleMetricStatsRecord, test_SingleMetricStatsRecord),
+        ("单指标的明细汇总记录", SingleMetricStatsRecord, test_SingleMetricStatsRecord),
         ("未定义", UnparsedRawPersonalData, test_UnparsedRawPersonalData),
     ]
 
@@ -691,7 +691,7 @@ def _self_test_aggregate_patterns_to_formatted_text(
             raise AssertionError(f"[self-test][agg] 输出为空/非字符串：case#{i} raw={raw}")
 
         # 更具体的结构断言（不过度严格，避免因表头细节调整导致测试脆弱）
-        if ("### " not in out) and ("| " not in out) and ("零散/无法聚合" not in out):
+        if ("### " not in out) and ("| " not in out) and ("零散或无法聚合" not in out):
             raise AssertionError(f"[self-test][agg] markdown 输出结构异常：case#{i} raw={raw}")
 
         ok += 1

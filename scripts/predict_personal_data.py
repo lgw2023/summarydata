@@ -543,7 +543,7 @@ system_prompt = """
 [数据样式]
 [
     {
-        "实体类型": "单指标的统计复合记录",
+        "实体类型": "单指标的明细汇总记录",
         "解析逻辑": "{核心指标名}：[{日期}{数值}{单位}]，{指标名称}{数值}{单位}{状态描述}...（用中文或英文逗号分隔多条记录，若只有一条记录，则不使用逗号）",
         "核心字段": 
         {
@@ -586,7 +586,7 @@ system_prompt = """
 [数据样式]
 [
     {
-        "实体类型": "单指标的统计复合记录",
+        "实体类型": "单指标的明细汇总记录",
         "解析逻辑": "{核心指标名}：[{日期}{数值}{单位}]，{指标名称}{数值}{单位}{状态描述}...（用中文或英文逗号分隔多条记录，若只有一条记录，则不使用逗号）",
         "核心字段": 
         {
@@ -630,7 +630,7 @@ system_prompt = """
 [数据样式]
 [
     {
-        "实体类型": "单指标的统计复合记录",
+        "实体类型": "单指标的明细汇总记录",
         "解析逻辑": "{核心指标名}：[{日期}{数值}{单位}]，{指标名称}{数值}{单位}{状态描述}...（用中文或英文逗号分隔多条记录，若只有一条记录，则不使用逗号）",
         "核心字段": 
         {
@@ -909,7 +909,7 @@ _ALLOWED_ENTITY_TYPES_STRICT: set[str] = {
     "无时间日期的数值总结",
     "单日期数值单项总结",
     "单日期文本总结",
-    "单指标的统计复合记录",
+    "单指标的明细汇总记录",
     "单日期数值多项总结",
 }
 
@@ -1063,7 +1063,7 @@ def _validate_data_pattern_json(obj: Any) -> tuple[bool, list[str]]:
     - 实体类型=“无时间日期的数值总结”
     - 实体类型=“单日期数值单项总结”
     - 实体类型=“单日期文本总结”
-    - 实体类型=“单指标的统计复合记录”
+    - 实体类型=“单指标的明细汇总记录”
     - 实体类型=“单日期数值多项总结”
 
     约束：
@@ -1134,7 +1134,7 @@ def _validate_data_pattern_json(obj: Any) -> tuple[bool, list[str]]:
         {"指标名称","时间","状态描述"}
       - "时间" 必须严格为 "Date (格式: MM/DD)"（且不含数字）
       - "状态描述" 必须严格为 "String"
-    - 当存在任意 item 的 "实体类型" == "单指标的统计复合记录" 时：
+    - 当存在任意 item 的 "实体类型" == "单指标的明细汇总记录" 时：
       - 数组长度必须为 1，且唯一元素必须为 dict
       - item 只能包含且必须包含两个 key：{"实体类型","核心字段"}
       - "核心字段" 必须为 dict，且 key 不能多不能少，严格为：
@@ -1168,7 +1168,7 @@ def _validate_data_pattern_json(obj: Any) -> tuple[bool, list[str]]:
         "无时间日期的数值总结",
         "单日期数值单项总结",
         "单日期文本总结",
-        "单指标的统计复合记录",
+        "单指标的明细汇总记录",
         "单日期数值多项总结",
     }
     present_supported_types: set[str] = set()
@@ -1186,7 +1186,7 @@ def _validate_data_pattern_json(obj: Any) -> tuple[bool, list[str]]:
 
     triggered_type = next(iter(present_supported_types))
 
-    if triggered_type in {"单指标的明细记录", "周期数值单项总结", "周期数值对比记录", "单指标的统计复合记录"}:
+    if triggered_type in {"单指标的明细记录", "周期数值单项总结", "周期数值对比记录", "单指标的明细汇总记录"}:
         if len(obj) != 1:
             return False, [f"当实体类型为“{triggered_type}”时，整体必须为长度为 1 的列表：实际长度={len(obj)}"]
         items = [obj[0]]
@@ -1246,7 +1246,7 @@ def _validate_data_pattern_json(obj: Any) -> tuple[bool, list[str]]:
             required_core_keys = {"指标名称", "日期", "数值类型", "单位", "状态描述"}
         elif triggered_type == "单日期文本总结":
             required_core_keys = {"指标名称", "时间", "状态描述"}
-        elif triggered_type == "单指标的统计复合记录":
+        elif triggered_type == "单指标的明细汇总记录":
             required_core_keys = {"指标名称", "数据列表", "统计汇总描述"}
         elif triggered_type == "单日期数值多项总结":
             required_core_keys = {"指标名称", "日期", "数值类型", "单位", "状态描述"}
@@ -1389,8 +1389,8 @@ def _validate_data_pattern_json(obj: Any) -> tuple[bool, list[str]]:
                 sd = core.get("状态描述")
                 if not isinstance(sd, str) or sd.strip() != "String":
                     errors.append(f'核心字段.状态描述 必须严格为 "String"：index={idx} 实际={sd!r}')
-        elif triggered_type == "单指标的统计复合记录":
-            # 单指标的统计复合记录：
+        elif triggered_type == "单指标的明细汇总记录":
+            # 单指标的明细汇总记录：
             # - 数据列表：dict 列表且长度=1；元素键严格为 {日期,数值类型,单位}；日期严格 MM月DD日 占位
             # - 统计汇总描述：dict 列表且长度>=1；元素键严格为 {指标名称,数值类型,单位,状态描述}；状态描述严格 String
             data_list = core.get("数据列表")
@@ -1623,7 +1623,7 @@ def infer_style_json_for_line(
                         "核心字段必须且只能包含：指标名称、状态描述；其中状态描述必须严格为 \"String\"。\n"
                         "10) 当实体类型为“无时间日期的数值总结”时：整体必须是字典列表，长度必须 >= 1；列表中每个对象只能有“实体类型/核心字段”两项；"
                         "核心字段必须且只能包含：指标名称、数值类型、单位、状态描述；其中数值类型必须在白名单内，状态描述必须严格为 \"String\"。\n"
-                        "11) 当实体类型为“单指标的统计复合记录”时：整体必须是长度为 1 的列表，且仅包含一个对象；该对象只能有“实体类型/核心字段”两项；"
+                        "11) 当实体类型为“单指标的明细汇总记录”时：整体必须是长度为 1 的列表，且仅包含一个对象；该对象只能有“实体类型/核心字段”两项；"
                         "核心字段必须且只能包含：指标名称、数据列表、统计汇总描述；其中数据列表必须是字典列表且长度必须为 1，且唯一元素必须且只能包含：日期、数值类型、单位（日期必须严格为 \"Date (格式: MM月DD日)\"）；"
                         "统计汇总描述必须是字典列表且长度必须 >= 1，且每个元素必须且只能包含：指标名称、数值类型、单位、状态描述（状态描述必须严格为 \"String\"）。\n"
                         "12) 当实体类型为“单日期数值单项总结”时：整体必须是字典列表，长度必须 >= 1；列表中每个对象只能有“实体类型/核心字段”两项；"
@@ -2492,7 +2492,7 @@ python scripts/predict_personal_data.py --raw-data summary_train_v3.csv --extrac
 python scripts/predict_personal_data.py --raw-data summary_train_v3.csv --extract-entity-type "周期数值多项总结" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
 python scripts/predict_personal_data.py --raw-data summary_train_v3.csv --extract-entity-type "周期数值对比记录" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
 python scripts/predict_personal_data.py --raw-data summary_train_v3.csv --extract-entity-type "单指标的明细记录" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
-python scripts/predict_personal_data.py --raw-data summary_train_v3.csv --extract-entity-type "单指标的统计复合记录" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
+python scripts/predict_personal_data.py --raw-data summary_train_v3.csv --extract-entity-type "单指标的明细汇总记录" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
 python scripts/predict_personal_data.py --raw-data summary_train_v3.csv --extract-entity-type "未定义" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
 
 
@@ -2506,7 +2506,7 @@ python scripts/predict_personal_data.py --raw-data data_diff_sample.csv --extrac
 python scripts/predict_personal_data.py --raw-data data_diff_sample.csv --extract-entity-type "周期数值多项总结" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
 python scripts/predict_personal_data.py --raw-data data_diff_sample.csv --extract-entity-type "周期数值对比记录" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
 python scripts/predict_personal_data.py --raw-data data_diff_sample.csv --extract-entity-type "单指标的明细记录" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
-python scripts/predict_personal_data.py --raw-data data_diff_sample.csv --extract-entity-type "单指标的统计复合记录" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
+python scripts/predict_personal_data.py --raw-data data_diff_sample.csv --extract-entity-type "单指标的明细汇总记录" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
 python scripts/predict_personal_data.py --raw-data data_diff_sample.csv --extract-entity-type "未定义" | grep -v "个人数据" | grep -v "style_item" | grep -v "共扫描" | perl -lane 'print "\"$_\"," if $_;'
 
 

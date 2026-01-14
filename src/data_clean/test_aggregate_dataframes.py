@@ -75,21 +75,21 @@ def _self_test_aggregate_patterns_to_dataframes(
                 )
 
             # 不强制每个 df 必须非空（比如某些极端输入只产生 loose_lines），但非 loose 表通常应有列
-            if et != "零散/无法聚合" and df.columns.size == 0:
+            if et != "零散或无法聚合" and df.columns.size == 0:
                 raise AssertionError(
                     f"[self-test][df-agg] 非 loose 表没有任何列：case#{case_idx} df#{j} raw={_short(raw)} entity_type={et!r}"
                 )
 
-            if et == "零散/无法聚合":
+            if et == "零散或无法聚合":
                 if "raw" not in df.columns:
                     raise AssertionError(
                         f"[self-test][df-agg] loose 表缺少 raw 列：case#{case_idx} df#{j} raw={_short(raw)} cols={list(df.columns)!r}"
                     )
 
-            # 对比表：若 attrs 提供了 range1/range2，则列中应包含（可能被缩写后的）范围列
+            # 对比表：若 attrs 提供了 date_range1/date_range2，则列中应包含（可能被缩写后的）范围列
             if et == "周期数值对比记录":
-                # 新版：对比表保持长表结构（range1/value1/range2/value2/logic/diff/metric）
-                for need in ("metric", "diff", "range1", "range2"):
+                # 新版：对比表保持长表结构（date_range1/value1/date_range2/value2/logic/diff/metric）
+                for need in ("metric", "diff", "date_range1", "date_range2"):
                     if need not in df.columns:
                         raise AssertionError(
                             f"[self-test][df-agg] 对比表缺少列 {need!r}：case#{case_idx} df#{j} raw={_short(raw)} cols={list(df.columns)!r}"
@@ -127,5 +127,104 @@ def _self_test_aggregate_patterns_to_dataframes(
     print(f"[self-test] aggregate_patterns_to_dataframes 通过：{ok}/{len(xs) - skipped_empty}")
 
 
-__all__ = ["_self_test_aggregate_patterns_to_dataframes"]
+def _self_test_aggregate_dataframes_to_table(
+    lines: Sequence[str],
+    *,
+    max_cases: int | None = 30,
+    print_preview: bool = True,
+) -> None:
+    """
+    self-test：验证
+    - aggregate_patterns_to_dataframes()
+    - aggregate_dataframes_to_table()
+    的端到端行为（从原始多行文本 -> DataFrame 列表 -> 合并为单表）。
+    """
+    import pandas as pd  # type: ignore
+
+    xs = list(lines or [])
+    if max_cases is not None:
+        xs = xs[: max(0, int(max_cases))]
+
+    def _short(s: Any, n: int = 220) -> str:
+        t = str(s if s is not None else "").replace("\n", " ").strip()
+        if n <= 0:
+            return ""
+        return t if len(t) <= n else (t[: n - 1] + "…")
+
+    print(f"[self-test] aggregate_dataframes_to_table 样本数={len(xs)} format=table")
+
+    ok = 0
+    skipped_empty = 0
+    for i, text in enumerate(xs):
+        raw = (text or "").strip()
+        if not raw:
+            skipped_empty += 1
+            continue
+
+        patterns = explode_newlines_and_route_to_dataclasses(raw)  # type: ignore[name-defined]  # noqa: F405
+        dfs = aggregate_patterns_to_dataframes(patterns, include_loose_lines=True)  # type: ignore[name-defined]  # noqa: F405
+        table = aggregate_dataframes_to_table(dfs, include_loose_lines=True)  # type: ignore[name-defined]  # noqa: F405
+
+        if not isinstance(table, pd.DataFrame):
+            raise AssertionError(f"[self-test][df-table] 输出不是 DataFrame：case#{i} raw={_short(raw)} type={type(table).__name__}")
+
+        # 核心断言：行数应等于所有子表行数之和
+        expect_n = sum(int(getattr(d, "shape", (0, 0))[0]) for d in dfs)
+        if int(table.shape[0]) != int(expect_n):
+            raise AssertionError(
+                f"[self-test][df-table] 行数不一致：case#{i} raw={_short(raw)} expect={expect_n} got={int(table.shape[0])}"
+            )
+
+        # 核心断言：输出必须包含“固定完整宽表表头”（无论输入包含哪些类型）
+        fixed_header = [
+            "entity_type",
+            "data_type",
+            "title",
+            "table_idx",
+            "row_idx",
+            "date",
+            "time",
+            "start_date",
+            "end_date",
+            "date_range1",
+            "date_range2",
+            "category",
+            "metric",
+            "value",
+            "unit",
+            "status",
+            "value1",
+            "value2",
+            "logic",
+            "diff",
+            "raw",
+        ]
+        for need in fixed_header:
+            if need not in table.columns:
+                raise AssertionError(
+                    f"[self-test][df-table] 缺少列 {need!r}：case#{i} raw={_short(raw)} cols={list(table.columns)!r}"
+                )
+
+        # include_loose_lines=False 应能剔除 loose 行（如果存在的话）
+        table2 = aggregate_dataframes_to_table(dfs, include_loose_lines=False)  # type: ignore[name-defined]  # noqa: F405
+        if "entity_type" in table2.columns:
+            if (table2["entity_type"] == "零散或无法聚合").any():
+                raise AssertionError(
+                    f"[self-test][df-table] include_loose_lines=False 未剔除 loose 行：case#{i} raw={_short(raw)}"
+                )
+
+        ok += 1
+        if print_preview:
+            print(f"  - case#{i} 解析对象数={len(patterns)} 输出分表数={len(dfs)} 合并表shape={table.shape!r}")
+            try:
+                print(f"\033[92m{table.to_string(index=False)}\033[0m")
+            except Exception:
+                pass
+
+    if skipped_empty:
+        print(f"[self-test] aggregate_dataframes_to_table 跳过空样本：{skipped_empty}")
+    print(f"[self-test] aggregate_dataframes_to_table 通过：{ok}/{len(xs) - skipped_empty}")
+
+
+__all__ = ["_self_test_aggregate_patterns_to_dataframes", "_self_test_aggregate_dataframes_to_table"]
 
