@@ -162,10 +162,10 @@ class PipelineConfig:
 
         generators_cfg = pipeline_cfg.get("generators")
         judges_cfg = pipeline_cfg.get("judges")
-        if not isinstance(generators_cfg, list) or not generators_cfg:
-            raise ValueError("pipeline.generators must be a non-empty list.")
-        if not isinstance(judges_cfg, list) or not judges_cfg:
-            raise ValueError("pipeline.judges must be a non-empty list.")
+        # if not isinstance(generators_cfg, list) or not generators_cfg:
+        #     raise ValueError("pipeline.generators must be a non-empty list.")
+        # if not isinstance(judges_cfg, list) or not judges_cfg:
+        #     raise ValueError("pipeline.judges must be a non-empty list.")
 
         # ===== 3. 解析输出文件路径 =====
         # 仍然允许在 YAML 中自定义 output_files.*，但默认情况下：

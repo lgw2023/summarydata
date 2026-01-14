@@ -109,14 +109,3 @@ pipeline:
       model_name: "think_answer_phone"
       answer_key: "think_answer_phone"
 
-
-  judges:
-    # 使用通用 LLM 作为 LLM-as-judge，模型与 endpoint 从 .env 读取
-    - name: llm
-      model_name_env: "gpt-5-mini-2025-08-07"
-      base_url_env: "LLM_MODEL_JUDGE_URL"
-      api_key_env: "LLM_MODEL_JUDGE_API_KEY"
-      # 提示词模板统一从 score_prompt.py 中的 GROUND_PROMPT_TPL / STRUCT_PROMPT_TPL 读取
-      timeout: 60
-      max_retries: 30
-      backoff_base: 1.0

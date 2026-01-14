@@ -117,9 +117,8 @@ def _self_test_aggregate_patterns_to_dataframes(
                 et = str(getattr(df, "attrs", {}).get("entity_type") or "")
                 title = str(getattr(df, "attrs", {}).get("title") or "")
                 print(f"    [df#{j}] entity_type={et!r} title={title!r} shape={df.shape!r} cols={list(df.columns)!r}")
-                # 只打印前几行避免日志过大
                 try:
-                    print(df.head(6).to_string(index=False))
+                    print(f"\033[92m{df.to_string(index=False)}\033[0m")
                 except Exception:
                     pass
 

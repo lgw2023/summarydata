@@ -100,21 +100,3 @@ pipeline:
     - name: reference
       model_name: "ref_think_phone"
       answer_key: "ref_think_phone"
-
-
-  judges:
-    # 使用通用 LLM 作为 LLM-as-judge，模型与 endpoint 从 .env 读取
-    - name: llm
-      model_name_env: "gpt-5-mini-2025-08-07"
-      base_url_env: "LLM_MODEL_JUDGE_URL"
-      api_key_env: "LLM_MODEL_JUDGE_API_KEY"
-      # 提示词模板统一从 score_prompt.py 中的 GROUND_PROMPT_TPL / STRUCT_PROMPT_TPL 读取
-      timeout: 60
-      max_retries: 30
-      backoff_base: 1.0
-
-  ranking:
-    top_k: 1
-    bottom_k: 1
-    # 要求最高分和最低分至少差 12，才认为排序可信
-    min_score_diff: 12

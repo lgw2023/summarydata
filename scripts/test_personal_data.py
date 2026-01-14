@@ -223,7 +223,7 @@ def test_aggregate_by_dataframes():
     # _self_test_aggregate_patterns_to_dataframes(test_SingleMetricDetailRecord, max_cases=None, print_preview=True)
     # _self_test_aggregate_patterns_to_dataframes(test_PeriodValueSingleSummaryRecord, max_cases=None, print_preview=True)
     # _self_test_aggregate_patterns_to_dataframes(test_PeriodTextSummaryRecord, max_cases=None, print_preview=True)
-    # _self_test_aggregate_patterns_to_dataframes(test_PeriodValueCompareRecord, max_cases=None, print_preview=True)
+    _self_test_aggregate_patterns_to_dataframes(test_PeriodValueCompareRecord, max_cases=None, print_preview=True)
     # _self_test_aggregate_patterns_to_dataframes(test_PeriodValuemMultiSummaryRecord, max_cases=None, print_preview=True)
     # _self_test_aggregate_patterns_to_dataframes(test_SingleDateValueSingleSummaryRecord, max_cases=None, print_preview=True)
     # _self_test_aggregate_patterns_to_dataframes(test_SingleDateTextSummaryRecord, max_cases=None, print_preview=True)
@@ -248,30 +248,30 @@ def test_aggregate_by_dataframes():
     #     ])],
     #     max_cases=None, print_preview=True)
 
-    # 测试 excel 数据文件（所有行都覆盖）
-    _xlsx_path = PROJECT_ROOT / "summary_eval_diff.xlsx"
-    try:
-        import pandas as pd  # type: ignore
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError(
-            "读取 Excel 需要依赖 pandas + openpyxl。请先安装：pip install pandas openpyxl"
-        ) from exc
+    # # 测试 excel 数据文件（所有行都覆盖）
+    # _xlsx_path = PROJECT_ROOT / "summary_eval_diff.xlsx"
+    # try:
+    #     import pandas as pd  # type: ignore
+    # except Exception as exc:  # pragma: no cover
+    #     raise RuntimeError(
+    #         "读取 Excel 需要依赖 pandas + openpyxl。请先安装：pip install pandas openpyxl"
+    #     ) from exc
 
-    _df = pd.read_excel(_xlsx_path, dtype=object)  # 默认第一个 sheet
-    if "data" not in set(_df.columns.astype(str).tolist()):
-        raise KeyError(
-            f"Excel 中未找到 'data' 列：{_xlsx_path}；现有列={list(_df.columns)}"
-        )
+    # _df = pd.read_excel(_xlsx_path, dtype=object)  # 默认第一个 sheet
+    # if "data" not in set(_df.columns.astype(str).tolist()):
+    #     raise KeyError(
+    #         f"Excel 中未找到 'data' 列：{_xlsx_path}；现有列={list(_df.columns)}"
+    #     )
 
-    _series = _df["data"]
-    test_aggregate_patterns_to_dataframes = [
-        "" if pd.isna(v) else str(v) for v in _series.tolist()
-    ]
-    _self_test_aggregate_patterns_to_dataframes(
-        test_aggregate_patterns_to_dataframes,
-        max_cases=None,
-        print_preview=True,
-    )
+    # _series = _df["data"]
+    # test_aggregate_patterns_to_dataframes = [
+    #     "" if pd.isna(v) else str(v) for v in _series.tolist()
+    # ]
+    # _self_test_aggregate_patterns_to_dataframes(
+    #     test_aggregate_patterns_to_dataframes,
+    #     max_cases=None,
+    #     print_preview=True,
+    # )
 
 
 def main() -> None:

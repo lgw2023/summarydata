@@ -9,6 +9,7 @@ from __future__ import annotations
 """
 
 import sys
+import json
 from pathlib import Path
 
 
@@ -25,8 +26,8 @@ def main(
     xlsx_path: str | Path | None = None,
     sheet_name: str | int | None = 0,
     data_col: str = "data",
-    max_rows: int = 3,
-    max_rows_per_table: int = 60,
+    max_rows: int = 5,
+    max_rows_per_table: int = 200,
 ) -> None:
     """
     示例：演示 `src/data_clean` 三个聚合模块的用法。
@@ -73,49 +74,45 @@ def main(
     # 入口在 src/data_clean/parse.py：explode_newlines_and_route_to_dataclasses
     patterns_all = []
     for t in texts:
-        patterns_all.extend(explode_newlines_and_route_to_dataclasses(t, strict_uncovered_to_unparsed=False))  # noqa: F405
+        patterns_all.append(explode_newlines_and_route_to_dataclasses(t, strict_uncovered_to_unparsed=True))  # noqa: F405
 
     print(f"[info] 输入样例条数={len(texts)}，解析得到 patterns 数量={len(patterns_all)}")
+    print("\n" + "=" * 23 + " patterns 第一个 示例 " + "=" * 23)
+    print(f"patterns {0}: {patterns_all[0]}")
 
     # 1) aggregate_format：输出 Markdown 表格文本
-    print("\n" + "=" * 24 + " aggregate_format 示例 " + "=" * 24)
-    formatted_text = aggregate_patterns_to_formatted_text(  # noqa: F405
-        patterns_all,
-        max_rows_per_table=max_rows_per_table,
-        include_loose_lines=True,
-    )
-    print(formatted_text)
+    print("\n" + "=" * 24 + " aggregate_format 示例 patterns[0] 聚合结果 " + "=" * 24)
+    formatted_texts = []
+    for i in range(len(patterns_all)):
+        formatted_texts.append(aggregate_patterns_to_formatted_text(patterns_all[i], max_rows_per_table=max_rows_per_table, include_loose_lines=True))  # noqa: F405
+    print(formatted_texts[0])
 
     # 2) aggregate_dataframe：输出 DataFrame 列表 + 元信息（df.attrs）
-    print("\n" + "=" * 23 + " aggregate_dataframe 示例 " + "=" * 23)
-    dfs = aggregate_patterns_to_dataframes(  # noqa: F405
-        patterns_all,
-        max_rows_per_table=max_rows_per_table,
-        include_loose_lines=True,
-    )
+    dfs = []
+    for i in range(len(patterns_all)):
+        dfs.append(aggregate_patterns_to_dataframes(patterns_all[i], max_rows_per_table=max_rows_per_table, include_loose_lines=True))  # noqa: F405
     print(f"[info] 输出 DataFrame 数量={len(dfs)}")
-    for i, dfi in enumerate(dfs[:5]):
-        attrs = getattr(dfi, "attrs", {}) or {}
-        title = str(attrs.get("title") or "")
-        entity_type = str(attrs.get("entity_type") or "")
-        print(f"\n--- df[{i}] entity_type={entity_type!r} title={title!r} shape={dfi.shape} ---")
-        # 只展示前几行，避免刷屏
-        print(dfi.head(8).to_string(index=False))
+    print("\n" + "=" * 23 + " aggregate_dataframe 示例 patterns[0] 聚合结果 " + "=" * 23)
+    for i in range(len(dfs[0])):
+        print(dfs[0][i])
 
     # 3) aggregate_time：按“时间桶”聚合，输出结构化列表 / JSONL
-    print("\n" + "=" * 26 + " aggregate_time 示例 " + "=" * 26)
-    buckets = aggregate_patterns_by_time(patterns_all, include_unknown_time=True, add_summary_text=True)  # noqa: F405
-    print(f"[info] 时间桶数量={len(buckets)}；下面打印前 3 个桶的 summary：")
-    for b in buckets[:3]:
-        t = b.get("time") or {}
-        print(f"- time={t} summary={str(b.get('summary') or '')[:200]}")
+    print("\n" + "=" * 26 + " aggregate_time 示例 patterns[0] 聚合结果 " + "=" * 26)
+    buckets = []
+    for i in range(len(patterns_all)):
+        buckets.append(aggregate_patterns_by_time(patterns_all[i], include_unknown_time=True, add_summary_text=True))  # noqa: F405
+    print(f"[info] 时间桶数量={len(buckets)}；下面打印第1个桶的 summary：")
+    for b in [buckets[0]]:
+        for i in range(len(b)):
+            t = b[i].get("time") or {}
+            print(f"\t- time={t} summary={str(b[i].get('summary') or '')}")
 
-    print("\n[info] 同样也可以直接得到 JSONL：")
-    jsonl = aggregate_patterns_to_time_jsonl(patterns_all, include_unknown_time=True, add_summary_text=True, ensure_ascii=False)  # noqa: F405
-    # 只打印前 3 行
-    jsonl_lines = [ln for ln in (jsonl or "").splitlines() if ln.strip()]
-    for ln in jsonl_lines[:3]:
-        print(ln)
+    jsonls = []
+    for i in range(len(patterns_all)):
+        jsonls.append(aggregate_patterns_to_time_jsonl(patterns_all[i], include_unknown_time=True, add_summary_text=True, ensure_ascii=False))  # noqa: F405
+    print("\n" + "=" * 23 + " aggregate_time 示例 patterns[0] 聚合结果 " + "=" * 23)
+    print("[info] 同样也可以直接得到 JSONL 输出 jsonl 数量={len(jsonls)}：")
+    print(jsonls[0])
 
 
 if __name__ == "__main__":
