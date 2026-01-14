@@ -92,7 +92,7 @@ def aggregate(person_datas: list[str]) -> None:
             print(f"\033[92m  {'}'}\033[0m")
         print(f"\033[92m]\033[0m")
 
-    return dataframes, wide_tables, markdown_tables, time_jsons
+    return patterns_all, dataframes, wide_tables, markdown_tables, time_jsons
 
 
 if __name__ == "__main__":
@@ -125,4 +125,4 @@ if __name__ == "__main__":
         raise ValueError(f"列 {data_col!r} 中没有可用的非空文本：{_xlsx_path}")
 
 
-    dataframes, wide_tables, markdown_tables, time_jsons = aggregate(person_datas=person_datas)
+    data_patterns, dataframes, wide_tables, markdown_tables, time_jsons = aggregate(person_datas=person_datas)
