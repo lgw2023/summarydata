@@ -221,3 +221,4 @@ summary_eval_diff_sample.xlsx
 summary_train_v3.csv
 .env
 /data/summary_eval_diff_data
+/data/summary_eval_diff_data_raw

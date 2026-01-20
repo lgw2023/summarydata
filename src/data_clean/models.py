@@ -42,11 +42,9 @@ from .normalize import (
 
 
 # ========= 格式化打印（给 self-test / 人类阅读用）=========
-def _shorten(s: Any, max_len: int = 120) -> str:
+def _shorten(s: Any) -> str:
     t = str(s if s is not None else "").replace("\n", " ").strip()
-    if max_len <= 0:
-        return ""
-    return t if len(t) <= max_len else (t[: max_len - 1] + "…")
+    return t
 
 
 def _indent_lines(text: str, n: int = 2) -> str:
@@ -59,23 +57,18 @@ def _fmt_header(title: str) -> str:
     return f"【{t}】" if t else "【】"
 
 
-def _fmt_kv(key: str, value: Any, *, max_len: int = 120) -> str:
-    return f"- {key}：{_shorten(value, max_len=max_len)}"
+def _fmt_kv(key: str, value: Any) -> str:
+    return f"- {key}：{_shorten(value)}"
 
 
 def _fmt_list_preview(
     items: Sequence[Any],
-    *,
-    max_items: int = 6,
-    max_len: int = 120,
     bullet: str = "- ",
 ) -> list[str]:
     xs = list(items or [])
     out: list[str] = []
-    for i, x in enumerate(xs[: max(0, int(max_items))]):
-        out.append(f"{bullet}[{i}] {_shorten(x, max_len=max_len)}")
-    if len(xs) > max_items:
-        out.append(f"{bullet}…（剩余 {len(xs) - max_items} 项已省略）")
+    for i, x in enumerate(xs):
+        out.append(f"{bullet}[{i}] {_shorten(x)}")
     return out
 
 
@@ -88,20 +81,13 @@ def _safe_getattr(obj: Any, name: str, default: Any = None) -> Any:
 
 def _fmt_rows_table(
     rows: Sequence[Sequence[Any]],
-    headers: Sequence[str],
-    *,
-    max_rows: int = 8,
-    max_cell_len: int = 60,
+    headers: Sequence[str]
 ) -> str:
     """
-    简易“表格”输出：对齐列宽 + 截断单元格，适合日志阅读（不追求 markdown）。
+    简易“表格”输出：对齐列宽，适合日志阅读（不追求 markdown）。
     """
     hs = [str(h) for h in headers]
-    rs = [list(map(str, r)) for r in rows[: max(0, int(max_rows))]]
-    # 截断
-    rs2: list[list[str]] = []
-    for r in rs:
-        rs2.append([_shorten(c, max_len=max_cell_len) for c in r])
+    rs2 = [list(map(str, r)) for r in rows]
     # 计算列宽
     col_n = len(hs)
     widths = [len(hs[i]) for i in range(col_n)]
@@ -114,8 +100,6 @@ def _fmt_rows_table(
     lines = [_row_line(hs), _row_line(["-" * w for w in widths])]
     for r in rs2:
         lines.append(_row_line(r))
-    if len(rows) > max_rows:
-        lines.append(f"…（剩余 {len(rows) - max_rows} 行已省略）")
     return "\n".join(lines)
 
 
@@ -161,16 +145,13 @@ class PersonalDataPatternBase:
 
         # 最终兜底：返回简短可读文本，避免空串
         try:
-            txt = self.format_print(max_items=6, max_len=160)
+            txt = self.format_print()
             return str(txt or "").strip() or et or str(self)
         except Exception:
             return et or str(self)
 
     def format_print(
         self,
-        *,
-        max_items: int = 8,
-        max_len: int = 120,
     ) -> str:
         """
         面向人类阅读的格式化输出（用于 self-test / 日志 / 快速肉眼检查）。
@@ -183,9 +164,9 @@ class PersonalDataPatternBase:
             if v is None:
                 continue
             if k in ("原始个人数据", "个人数据"):
-                lines.append(_fmt_kv(k, v, max_len=max_len))
+                lines.append(_fmt_kv(k, v))
             elif k == "原因":
-                lines.append(_fmt_kv(k, v, max_len=max_len))
+                lines.append(_fmt_kv(k, v))
             else:
                 # 核心字段：只做浅层展示
                 try:
@@ -196,9 +177,9 @@ class PersonalDataPatternBase:
                 if isinstance(core_dict, Mapping):
                     for kk in ("指标名称", "开始日期", "结束日期", "日期", "时间", "单位", "数值类型", "状态描述"):
                         if kk in core_dict:
-                            lines.append(_indent_lines(_fmt_kv(kk, core_dict.get(kk), max_len=max_len), 2))
+                            lines.append(_indent_lines(_fmt_kv(kk, core_dict.get(kk)), 2))
                 else:
-                    lines.append(_indent_lines(_shorten(core_dict, max_len=max_len), 2))
+                    lines.append(_indent_lines(_shorten(core_dict), 2))
         return "\n".join(lines)
 
 
@@ -236,13 +217,13 @@ class UnparsedRawPersonalData(PersonalDataPatternBase):
         raw = str(raw_line or "").strip()
         return [cls(个人数据=raw, 原因=原因, 原始样式输出=原始样式输出)]
 
-    def format_print(self, *, max_items: int = 8, max_len: int = 220) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         lines = [_fmt_header("数据类型：未定义")]
         if self.原因:
-            lines.append(_fmt_kv("原因", self.原因, max_len=max_len))
-        lines.append(_fmt_kv("个人数据", self.个人数据, max_len=max_len))
+            lines.append(_fmt_kv("原因", self.原因))
+        lines.append(_fmt_kv("个人数据", self.个人数据))
         if self.原始样式输出 is not None:
-            lines.append(_fmt_kv("原始样式输出(截断)", self.原始样式输出, max_len=max_len))
+            lines.append(_fmt_kv("原始样式输出", self.原始样式输出))
         return "\n".join(lines)
 
 
@@ -308,15 +289,15 @@ class SingleMetricDetailRecord(PersonalDataPatternBase):
     def 记录条数(self) -> int:
         return max(len(self.日期列表), len(self.时间列表), len(self.数值列表))
 
-    def format_print(self, *, max_items: int = 8, max_len: int = 120) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
-            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）", max_len=max_len),
-            _fmt_kv("记录条数", self.记录条数, max_len=max_len),
+            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）"),
+            _fmt_kv("记录条数", self.记录条数),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         rows: list[list[Any]] = []
         n = max(len(self.日期列表), len(self.时间列表), len(self.数值列表))
@@ -327,7 +308,7 @@ class SingleMetricDetailRecord(PersonalDataPatternBase):
             rows.append([d, t, v])
         if rows:
             lines.append("- 明细（日期 / 时间 / 数值）：")
-            table = _fmt_rows_table(rows, headers=("日期", "时间", "数值"), max_rows=max_items, max_cell_len=max_len)
+            table = _fmt_rows_table(rows, headers=("日期", "时间", "数值"))
             lines.append(_indent_lines(table, 2))
         return "\n".join(lines)
 
@@ -472,15 +453,15 @@ class PeriodValueSingleSummaryRecord(PersonalDataPatternBase):
             len(self.数值列表),
         )
 
-    def format_print(self, *, max_items: int = 8, max_len: int = 120) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
-            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）", max_len=max_len),
-            _fmt_kv("记录条数", self.记录条数, max_len=max_len),
+            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）"),
+            _fmt_kv("记录条数", self.记录条数),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         n = max(
             len(self.开始日期列表),
@@ -503,9 +484,7 @@ class PeriodValueSingleSummaryRecord(PersonalDataPatternBase):
             lines.append("- 明细（开始/结束/指标/类型/单位/数值）：")
             table = _fmt_rows_table(
                 rows,
-                headers=("开始", "结束", "指标", "类型", "单位", "数值"),
-                max_rows=max_items,
-                max_cell_len=max_len,
+                headers=("开始", "结束", "指标", "类型", "单位", "数值")
             )
             lines.append(_indent_lines(table, 2))
         return "\n".join(lines)
@@ -602,15 +581,15 @@ class PeriodTextSummaryRecord(PersonalDataPatternBase):
             len(self.状态描述列表),
         )
 
-    def format_print(self, *, max_items: int = 8, max_len: int = 140) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
-            _fmt_kv("指标名称", core.指标名称, max_len=max_len),
-            _fmt_kv("记录条数", self.记录条数, max_len=max_len),
+            _fmt_kv("指标名称", core.指标名称),
+            _fmt_kv("记录条数", self.记录条数),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         n = max(
             len(self.开始日期列表),
@@ -627,7 +606,7 @@ class PeriodTextSummaryRecord(PersonalDataPatternBase):
             rows.append([st, ed, nm, desc])
         if rows:
             lines.append("- 明细（开始/结束/指标/状态描述）：")
-            table = _fmt_rows_table(rows, headers=("开始", "结束", "指标", "状态描述"), max_rows=max_items, max_cell_len=max_len)
+            table = _fmt_rows_table(rows, headers=("开始", "结束", "指标", "状态描述"))
             lines.append(_indent_lines(table, 2))
         return "\n".join(lines)
 
@@ -745,19 +724,18 @@ class PeriodValueCompareRecord(PersonalDataPatternBase):
             len(self.差异数值类型列表),
         )
 
-    def format_print(self, *, max_items: int = 8, max_len: int = 140) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
             _fmt_kv(
                 "指标名称",
-                f"{core.指标名称}（{core.数值类型}，单位={core.单位}；差异类型={core.差异数值类型}）",
-                max_len=max_len,
+                f"{core.指标名称}（{core.数值类型}，单位={core.单位}；差异类型={core.差异数值类型}）"
             ),
-            _fmt_kv("记录条数", self.记录条数, max_len=max_len),
+            _fmt_kv("记录条数", self.记录条数),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         n = max(
             len(self.日期范围1列表),
@@ -780,9 +758,7 @@ class PeriodValueCompareRecord(PersonalDataPatternBase):
             lines.append("- 对比明细（范围1/值1/范围2/值2/1相较于2的逻辑/1相较于2的差异）：")
             table = _fmt_rows_table(
                 rows,
-                headers=("范围1", "值1", "范围2", "值2", "1相较于2的逻辑", "1相较于2的差异"),
-                max_rows=max_items,
-                max_cell_len=max_len,
+                headers=("范围1", "值1", "范围2", "值2", "1相较于2的逻辑", "1相较于2的差异")
             )
             lines.append(_indent_lines(table, 2))
         return "\n".join(lines)
@@ -895,15 +871,15 @@ class PeriodValuemMultiSummaryRecord(PersonalDataPatternBase):
             len(self.状态描述列表),
         )
 
-    def format_print(self, *, max_items: int = 8, max_len: int = 140) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
-            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）", max_len=max_len),
-            _fmt_kv("记录条数", self.记录条数, max_len=max_len),
+            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）"),
+            _fmt_kv("记录条数", self.记录条数),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         n = max(
             len(self.开始日期列表),
@@ -928,9 +904,7 @@ class PeriodValuemMultiSummaryRecord(PersonalDataPatternBase):
             lines.append("- 明细（开始/结束/指标/类型/单位/数值/状态）：")
             table = _fmt_rows_table(
                 rows,
-                headers=("开始", "结束", "指标", "类型", "单位", "数值", "状态"),
-                max_rows=max_items,
-                max_cell_len=max_len,
+                headers=("开始", "结束", "指标", "类型", "单位", "数值", "状态")
             )
             lines.append(_indent_lines(table, 2))
         return "\n".join(lines)
@@ -1042,15 +1016,15 @@ class SingleDateValueSingleSummaryRecord(PersonalDataPatternBase):
             len(self.状态描述列表),
         )
 
-    def format_print(self, *, max_items: int = 8, max_len: int = 140) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
-            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）", max_len=max_len),
-            _fmt_kv("记录条数", self.记录条数, max_len=max_len),
+            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）"),
+            _fmt_kv("记录条数", self.记录条数),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         n = max(
             len(self.日期列表),
@@ -1073,9 +1047,7 @@ class SingleDateValueSingleSummaryRecord(PersonalDataPatternBase):
             lines.append("- 明细（日期/指标/类型/单位/数值/状态）：")
             table = _fmt_rows_table(
                 rows,
-                headers=("日期", "指标", "类型", "单位", "数值", "状态"),
-                max_rows=max_items,
-                max_cell_len=max_len,
+                headers=("日期", "指标", "类型", "单位", "数值", "状态")
             )
             lines.append(_indent_lines(table, 2))
         return "\n".join(lines)
@@ -1169,15 +1141,15 @@ class SingleDateTextSummaryRecord(PersonalDataPatternBase):
     def 记录条数(self) -> int:
         return max(len(self.日期列表), len(self.指标名称列表), len(self.状态描述列表))
 
-    def format_print(self, *, max_items: int = 8, max_len: int = 160) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
-            _fmt_kv("指标名称", core.指标名称, max_len=max_len),
-            _fmt_kv("记录条数", self.记录条数, max_len=max_len),
+            _fmt_kv("指标名称", core.指标名称),
+            _fmt_kv("记录条数", self.记录条数),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         n = max(len(self.日期列表), len(self.指标名称列表), len(self.状态描述列表))
         rows: list[list[Any]] = []
@@ -1188,7 +1160,7 @@ class SingleDateTextSummaryRecord(PersonalDataPatternBase):
             rows.append([d, nm, desc])
         if rows:
             lines.append("- 明细（日期/指标/状态描述）：")
-            table = _fmt_rows_table(rows, headers=("日期", "指标", "状态描述"), max_rows=max_items, max_cell_len=max_len)
+            table = _fmt_rows_table(rows, headers=("日期", "指标", "状态描述"))
             lines.append(_indent_lines(table, 2))
         return "\n".join(lines)
 
@@ -1259,15 +1231,15 @@ class NoTimestampTextSummaryRecord(PersonalDataPatternBase):
     def 记录条数(self) -> int:
         return max(len(self.指标名称列表), len(self.状态描述列表))
 
-    def format_print(self, *, max_items: int = 10, max_len: int = 160) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
-            _fmt_kv("指标名称", core.指标名称, max_len=max_len),
-            _fmt_kv("记录条数", self.记录条数, max_len=max_len),
+            _fmt_kv("指标名称", core.指标名称),
+            _fmt_kv("记录条数", self.记录条数),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         n = max(len(self.指标名称列表), len(self.状态描述列表))
         rows: list[list[Any]] = []
@@ -1277,7 +1249,7 @@ class NoTimestampTextSummaryRecord(PersonalDataPatternBase):
             rows.append([nm, desc])
         if rows:
             lines.append("- 明细（指标/状态描述）：")
-            table = _fmt_rows_table(rows, headers=("指标", "状态描述"), max_rows=max_items, max_cell_len=max_len)
+            table = _fmt_rows_table(rows, headers=("指标", "状态描述"))
             lines.append(_indent_lines(table, 2))
         return "\n".join(lines)
 
@@ -1366,15 +1338,15 @@ class NoDateValueSummaryRecord(PersonalDataPatternBase):
             len(self.状态描述列表),
         )
 
-    def format_print(self, *, max_items: int = 10, max_len: int = 140) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
-            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）", max_len=max_len),
-            _fmt_kv("记录条数", self.记录条数, max_len=max_len),
+            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）"),
+            _fmt_kv("记录条数", self.记录条数),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         n = max(
             len(self.指标名称列表),
@@ -1393,7 +1365,7 @@ class NoDateValueSummaryRecord(PersonalDataPatternBase):
             rows.append([nm, vt, u, v, desc])
         if rows:
             lines.append("- 明细（指标/类型/单位/数值/状态）：")
-            table = _fmt_rows_table(rows, headers=("指标", "类型", "单位", "数值", "状态"), max_rows=max_items, max_cell_len=max_len)
+            table = _fmt_rows_table(rows, headers=("指标", "类型", "单位", "数值", "状态"))
             lines.append(_indent_lines(table, 2))
         return "\n".join(lines)
 
@@ -1512,16 +1484,16 @@ class SingleMetricStatsRecord(PersonalDataPatternBase):
             len(self.统计状态描述列表),
         )
 
-    def format_print(self, *, max_items: int = 8, max_len: int = 140) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
-            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）", max_len=max_len),
-            _fmt_kv("明细条数", len(self.日期列表), max_len=max_len),
-            _fmt_kv("汇总条数", len(self.统计指标名称列表), max_len=max_len),
+            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}）"),
+            _fmt_kv("明细条数", len(self.日期列表)),
+            _fmt_kv("汇总条数", len(self.统计指标名称列表)),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         # 明细表
         detail_rows: list[list[Any]] = []
@@ -1532,7 +1504,7 @@ class SingleMetricStatsRecord(PersonalDataPatternBase):
             detail_rows.append([d, v])
         if detail_rows:
             lines.append("- 明细（日期/数值）：")
-            lines.append(_indent_lines(_fmt_rows_table(detail_rows, headers=("日期", "数值"), max_rows=max_items, max_cell_len=max_len), 2))
+            lines.append(_indent_lines(_fmt_rows_table(detail_rows, headers=("日期", "数值")), 2))
 
         # 汇总表
         sum_rows: list[list[Any]] = []
@@ -1545,7 +1517,7 @@ class SingleMetricStatsRecord(PersonalDataPatternBase):
         if sum_rows:
             lines.append("- 汇总（统计项/数值/状态）：")
             lines.append(
-                _indent_lines(_fmt_rows_table(sum_rows, headers=("统计项", "数值", "状态"), max_rows=max_items, max_cell_len=max_len), 2)
+                _indent_lines(_fmt_rows_table(sum_rows, headers=("统计项", "数值", "状态")), 2)
             )
         return "\n".join(lines)
 
@@ -1661,15 +1633,15 @@ class SingleDateValueMultiSummaryRecord(PersonalDataPatternBase):
             len(self.状态描述列表),
         )
 
-    def format_print(self, *, max_items: int = 8, max_len: int = 140) -> str:  # type: ignore[override]
+    def format_print(self) -> str:  # type: ignore[override]
         core = self.核心字段
         lines = [
             _fmt_header(f"数据类型：{self.实体类型}"),
-            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}；状态占位={core.状态描述}）", max_len=max_len),
-            _fmt_kv("记录条数", self.记录条数, max_len=max_len),
+            _fmt_kv("指标名称", f"{core.指标名称}（{core.数值类型}，单位={core.单位}；状态占位={core.状态描述}）"),
+            _fmt_kv("记录条数", self.记录条数),
         ]
         if self.原始个人数据:
-            lines.append(_fmt_kv("原始个人数据", self.原始个人数据, max_len=max_len * 2))
+            lines.append(_fmt_kv("原始个人数据", self.原始个人数据))
 
         n = max(
             len(self.日期列表),
@@ -1691,7 +1663,7 @@ class SingleDateValueMultiSummaryRecord(PersonalDataPatternBase):
         if rows:
             lines.append("- 明细（日期/指标/类型/单位/数值/状态）：")
             lines.append(
-                _indent_lines(_fmt_rows_table(rows, headers=("日期", "指标", "类型", "单位", "数值", "状态"), max_rows=max_items, max_cell_len=max_len), 2)
+                _indent_lines(_fmt_rows_table(rows, headers=("日期", "指标", "类型", "单位", "数值", "状态")), 2)
             )
         return "\n".join(lines)
 
@@ -2516,9 +2488,10 @@ def _parse_single_value_line_multi(
 # ========= 解析：周期数值单项总结（从原始一行文本抽取 1~N 条汇总记录） =========
 # 形如：{开始日期}[到｜至｜~]{结束日期}的{指标名称}为{数值}{单位}
 _PERIOD_SUMMARY_SEG_RE_1 = re.compile(
-    r"^\s*(?P<start>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*"
+    # 兼容 “2025/2/1日到2025年6月16日...” 这种混用口径：slash 日期后可能跟一个“日”
+    r"^\s*(?P<start>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}(?:日)?|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}(?:日)?|\d{1,2}月\d{1,2}日)\s*"
     r"(?P<sep>到|至|~|～|-|—)\s*"
-    r"(?P<end>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*"
+    r"(?P<end>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}(?:日)?|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}(?:日)?|\d{1,2}月\d{1,2}日)\s*"
     # 注意：不能把时间值里的 ":"（如 23:20）当作 “name/val” 分隔符；因此对 ":"/ "：" 做负向数字前缀约束。
     r"(?:的)?(?P<name>.+?)\s*(?:为|(?<!\d)[:：])\s*(?P<val>.+?)\s*$"
 )
@@ -2526,9 +2499,10 @@ _PERIOD_SUMMARY_SEG_RE_1 = re.compile(
 # 无 “为/：” 分隔符版本：{开始日期}[到｜至｜~]{结束日期}(的)?{rest}
 # 后续会用 `_extract_name_and_value_from_rest()` 从 rest 里按“第一个数字”切分 name/val。
 _PERIOD_SUMMARY_SEG_RE_3 = re.compile(
-    r"^\s*(?P<start>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*"
+    # 兼容 “2025/2/1日到...”：slash 日期后可带“日”
+    r"^\s*(?P<start>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}(?:日)?|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}(?:日)?|\d{1,2}月\d{1,2}日)\s*"
     r"(?P<sep>到|至|~|～|-|—)\s*"
-    r"(?P<end>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*"
+    r"(?P<end>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}(?:日)?|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}(?:日)?|\d{1,2}月\d{1,2}日)\s*"
     r"(?:的)?\s*(?P<rest>.+?)\s*$"
 )
 
@@ -2648,9 +2622,9 @@ def _parse_period_summary_line(
 
 # ========= 解析：周期文本总结（从原始一行文本抽取 1~N 条总结记录） =========
 _PERIOD_TEXT_SUMMARY_SEG_RE = re.compile(
-    r"^\s*(?P<start>\d{4}/\d{1,2}/\d{1,2}|\d{2}/\d{1,2}/\d{1,2}|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*"
+    r"^\s*(?P<start>\d{4}/\d{1,2}/\d{1,2}(?:日)?|\d{2}/\d{1,2}/\d{1,2}(?:日)?|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}(?:日)?|\d{1,2}月\d{1,2}日)\s*"
     r"(?:(?P<sep>到|至|~|～|-|—)\s*"
-    r"(?P<end>\d{4}/\d{1,2}/\d{1,2}|\d{2}/\d{1,2}/\d{1,2}|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*)?"
+    r"(?P<end>\d{4}/\d{1,2}/\d{1,2}(?:日)?|\d{2}/\d{1,2}/\d{1,2}(?:日)?|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}(?:日)?|\d{1,2}月\d{1,2}日)\s*)?"
     r"(?:的)?\s*(?P<rest>.+?)\s*$"
 )
 
@@ -3006,9 +2980,9 @@ def _parse_period_value_compare_line(
 #   8月7日锻炼时长15分钟偏低
 #   4/18锻炼时长2小时49分钟正常
 _PERIOD_VALUE_SUMMARY_SEG_RE = re.compile(
-    r"^\s*(?P<start>\d{4}/\d{1,2}/\d{1,2}|\d{2}/\d{1,2}/\d{1,2}|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*"
+    r"^\s*(?P<start>\d{4}/\d{1,2}/\d{1,2}(?:日)?|\d{2}/\d{1,2}/\d{1,2}(?:日)?|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}(?:日)?|\d{1,2}月\d{1,2}日)\s*"
     r"(?:(?P<sep>到|至|~|～|-|—)\s*"
-    r"(?P<end>\d{4}/\d{1,2}/\d{1,2}|\d{2}/\d{1,2}/\d{1,2}|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*)?"
+    r"(?P<end>\d{4}/\d{1,2}/\d{1,2}(?:日)?|\d{2}/\d{1,2}/\d{1,2}(?:日)?|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}(?:日)?|\d{1,2}月\d{1,2}日)\s*)?"
     r"(?:的)?\s*(?P<rest>.+?)\s*$"
 )
 

@@ -253,7 +253,9 @@ class _OpenAIChatGenerator(BaseGenerator):
                 #             self.model_name,
                 #             log_exc,
                 #         )
-
+                # print(f"url: {url}")
+                # print(f"headers: {headers}")
+                # print(f"payload: {payload}")
                 resp = self._client.post(url, headers=headers, json=payload)  # type: ignore[union-attr]
                 resp.raise_for_status()
                 data = resp.json()

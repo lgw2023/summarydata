@@ -27,7 +27,6 @@ if TYPE_CHECKING:  # pragma: no cover
 def aggregate_patterns_to_dataframes(
     patterns: Sequence[PersonalDataPattern],
     *,
-    max_rows_per_table: int = 300,
     include_loose_lines: bool = True,
     data_type_col: str | None = "data_type",
 ) -> list["pd.DataFrame"]:
@@ -485,7 +484,7 @@ def aggregate_patterns_to_dataframes(
             s = obj.recover_to_raw_data()
         except Exception:
             try:
-                s = obj.format_print(max_items=4, max_len=200)
+                s = obj.format_print()
             except Exception:
                 s = str(obj)
         return _safe_str(s).replace("\n", " ").replace("\r", " ").strip()
@@ -836,14 +835,7 @@ def aggregate_patterns_to_dataframes(
 
     # 周期类：保持 start/end 字段在表内（长表），不再把日期范围“折叠”到 title
 
-    # 2) 截断行数
-    max_n = max(0, int(max_rows_per_table))
-    if max_n > 0:
-        for k in list(tables.keys()):
-            if len(tables[k]) > max_n:
-                tables[k] = tables[k][:max_n]
-
-    # 3) 输出 DataFrame 列表
+    # 2) 输出 DataFrame 列表
     out: list[pd.DataFrame] = []
 
     for et, rows in tables.items():

@@ -17,7 +17,6 @@ from .models import (
     SingleMetricDetailRecord,
     SingleMetricStatsRecord,
     UnparsedRawPersonalData,
-    _shorten,
 )
 from .normalize import _attach_unit_to_value, _is_missing_token
 
@@ -86,10 +85,7 @@ _METRIC_ORDER_STATS_COMPOSITE: list[str] = [
 def aggregate_patterns_to_formatted_text(
     patterns: Sequence[PersonalDataPattern],
     *,
-    max_rows_per_table: int = 300,
-    max_cell_len: int = 120,
     include_loose_lines: bool = True,
-    loose_line_max_len: int = 200,
 ) -> str:
     """
     聚合/汇总一个数据类列表，并输出为可读文本（Markdown 表格）。
@@ -99,10 +95,7 @@ def aggregate_patterns_to_formatted_text(
     - 对无法抽取为表格行的对象，输出一个精简单行，并追加在主体输出之后，保证信息不丢失
 
     参数：
-    - max_rows_per_table: 每个实体类型最多输出多少行（防止极端大文本）
-    - max_cell_len: 单元格截断长度（仅影响格式化展示，不改数据）
     - include_loose_lines: 是否在主体输出后追加“零散或无法聚合”的单行列表
-    - loose_line_max_len: 零散单行的截断长度
     """
     objs = list(patterns or [])
     if not objs:
@@ -116,7 +109,7 @@ def aggregate_patterns_to_formatted_text(
         s = s.replace("\n", " ").replace("\r", " ").strip()
         # markdown 表格需要转义管道符
         s = s.replace("|", r"\|")
-        return _shorten(s, max_len=max_cell_len)
+        return s
 
     def _pick_first_non_empty(*xs: Any) -> str:
         for x in xs:
@@ -502,11 +495,11 @@ def aggregate_patterns_to_formatted_text(
             s = obj.recover_to_raw_data()
         except Exception:
             try:
-                s = obj.format_print(max_items=4, max_len=loose_line_max_len)
+                s = obj.format_print()
             except Exception:
                 s = str(obj)
         s2 = _safe_str(s).replace("\n", " ").replace("\r", " ").strip()
-        return _shorten(s2, max_len=loose_line_max_len)
+        return s2
 
     def _trim_number_like(s: str) -> str:
         """
@@ -1021,13 +1014,6 @@ def aggregate_patterns_to_formatted_text(
             table_title_suffix["周期数值多项总结"] = suf
     # 单日期文本总结、单日期数值多项总结和单日期数值单项总结：按日期分组，每个日期一个表格
     # 这三个类型不在这里处理，而是在输出时按日期分组
-
-    # 2) 截断表格行数
-    max_n = max(0, int(max_rows_per_table))
-    if max_n > 0:
-        for k in list(tables.keys()):
-            if len(tables[k]) > max_n:
-                tables[k] = tables[k][:max_n]
 
     # 输出：markdown
     parts: list[str] = []

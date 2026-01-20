@@ -92,11 +92,11 @@ pipeline:
     #   # top_p: 0.9
     #   # max_tokens: 512
 
-    # 参考答案（从输入表格中抽取，分别作为两条独立候选）
-    - name: reference_phone
-      model_name: "grpo_phone"
-      answer_key: "grpo_phone"
+    # # 参考答案（从输入表格中抽取，分别作为两条独立候选）
+    # - name: reference_phone
+    #   model_name: "grpo_phone"
+    #   answer_key: "grpo_phone"
 
-    - name: reference_phone
-      model_name: "v31_p440_phone"
-      answer_key: "v31_p440_phone"
+    # - name: reference_phone
+    #   model_name: "v31_p440_phone"
+    #   answer_key: "v31_p440_phone"

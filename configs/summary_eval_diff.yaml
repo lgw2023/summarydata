@@ -83,14 +83,14 @@ pipeline:
       # top_p: 0.9
       # max_tokens: 512
 
-    # - Gemini 2.5 Flash（通过 .env 中的 LLM_MODEL_GEMINI25_* 配置，经 DeepInfra OpenAI 兼容接口）
-    - name: closed_source
-      model_name: "google/gemini-2.5-flash"
-      base_url_env: "LLM_MODEL_GEMINI25_URL"
-      api_key_env: "LLM_MODEL_GEMINI25_API_KEY"
-      # temperature: 0.7
-      # top_p: 0.9
-      # max_tokens: 512
+    # # - Gemini 2.5 Flash（通过 .env 中的 LLM_MODEL_GEMINI25_* 配置，经 DeepInfra OpenAI 兼容接口）
+    # - name: closed_source
+    #   model_name: "google/gemini-2.5-flash"
+    #   base_url_env: "LLM_MODEL_GEMINI25_URL"
+    #   api_key_env: "LLM_MODEL_GEMINI25_API_KEY"
+    #   # temperature: 0.7
+    #   # top_p: 0.9
+    #   # max_tokens: 512
 
     # 参考答案（从输入表格中抽取，分别作为两条独立候选）
     - name: reference_phone

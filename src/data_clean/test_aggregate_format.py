@@ -17,10 +17,7 @@ else:
     from .models import _indent_lines  # noqa: F401
 
 def _self_test_print_objs(
-    objs: Sequence[PersonalDataPatternBase],
-    *,
-    max_items: int = 8,
-    max_len: int = 140,
+    objs: Sequence[PersonalDataPatternBase]
 ) -> None:
     """
     self-test 专用：把解析出来的数据类列表以"可读格式"打印出来。
@@ -37,7 +34,7 @@ def _self_test_print_objs(
         print(f"  - [#{k}/{total-1}]")
         if hasattr(obj, "format_print"):
             try:
-                txt = obj.format_print(max_items=max_items, max_len=max_len)  # type: ignore[misc]
+                txt = obj.format_print()  # type: ignore[misc]
             except Exception as e:
                 txt = f"【format_print 异常】{type(e).__name__}: {e}\n{str(obj)!r}"
         else:
@@ -90,8 +87,8 @@ def _self_test_single_metric_detail_record(lines: Sequence[str]) -> None:
                     raise AssertionError(f"[self-test] 第{i}行#{k}出现非法月份：date={d!r} raw_line前80={str(line)[:80]!r}")
 
         # 打印：如果返回的是“数据类列表”，则列表中每个值都要打印（而不是只打印第一个）
-        print(f"[self-test] #{i} 指标数={len(parsed_list)} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=8, max_len=140)
+        print(f"[self-test] #{i} 指标数={len(parsed_list)} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_period_value_single_summary_record(lines: Sequence[str]) -> None:
@@ -126,8 +123,8 @@ def _self_test_period_value_single_summary_record(lines: Sequence[str]) -> None:
             raise AssertionError(f"[self-test] 第{i}行解析得到 0 条记录")
 
         # 打印：如果解析结果是数据类列表，则列表中每个值都要打印
-        print(f"[self-test] #{i} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=8, max_len=140)
+        print(f"[self-test] #{i} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_period_text_summary_record(lines: Sequence[str]) -> None:
@@ -160,8 +157,8 @@ def _self_test_period_text_summary_record(lines: Sequence[str]) -> None:
             raise AssertionError(f"[self-test] 第{i}行解析得到 0 条记录")
 
         # 打印：如果解析结果是数据类列表，则列表中每个值都要打印
-        print(f"[self-test] #{i} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=8, max_len=160)
+        print(f"[self-test] #{i} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_period_value_compare_record(lines: Sequence[str]) -> None:
@@ -195,8 +192,8 @@ def _self_test_period_value_compare_record(lines: Sequence[str]) -> None:
             raise AssertionError(f"[self-test] 第{i}行解析得到 0 条记录")
 
         # 打印：如果解析结果是数据类列表，则列表中每个值都要打印
-        print(f"[self-test] #{i} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=8, max_len=160)
+        print(f"[self-test] #{i} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_period_value_multi_summary_record(lines: Sequence[str]) -> None:
@@ -232,8 +229,8 @@ def _self_test_period_value_multi_summary_record(lines: Sequence[str]) -> None:
             raise AssertionError(f"[self-test] 第{i}行解析得到 0 条记录")
 
         # 打印：如果解析结果是数据类列表，则列表中每个值都要打印
-        print(f"[self-test] #{i} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=8, max_len=160)
+        print(f"[self-test] #{i} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_no_timestamp_text_summary_record(lines: Sequence[str]) -> None:
@@ -259,8 +256,8 @@ def _self_test_no_timestamp_text_summary_record(lines: Sequence[str]) -> None:
             raise AssertionError(f"[self-test] 第{i}行解析得到 0 条记录")
 
         # 打印：如果解析结果是数据类列表，则列表中每个值都要打印
-        print(f"[self-test] #{i} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=12, max_len=160)
+        print(f"[self-test] #{i} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_no_date_value_summary_record(lines: Sequence[str]) -> None:
@@ -292,8 +289,8 @@ def _self_test_no_date_value_summary_record(lines: Sequence[str]) -> None:
             raise AssertionError(f"[self-test] 第{i}行解析得到 0 条记录")
 
         # 打印：如果解析结果是数据类列表，则列表中每个值都要打印
-        print(f"[self-test] #{i} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=12, max_len=160)
+        print(f"[self-test] #{i} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_single_metric_stats_record(lines: Sequence[str]) -> None:
@@ -328,8 +325,8 @@ def _self_test_single_metric_stats_record(lines: Sequence[str]) -> None:
         # 允许汇总列表为空（有些数据只有明细，没有汇总）
 
         # 打印：如果解析结果是数据类列表，则列表中每个值都要打印
-        print(f"[self-test] #{i} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=8, max_len=160)
+        print(f"[self-test] #{i} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_single_date_value_multi_summary_record(lines: Sequence[str]) -> None:
@@ -367,8 +364,8 @@ def _self_test_single_date_value_multi_summary_record(lines: Sequence[str]) -> N
         if n_d == 0:
             raise AssertionError(f"[self-test] 第{i}行解析得到 0 条记录")
 
-        print(f"[self-test] #{i} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=10, max_len=160)
+        print(f"[self-test] #{i} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_single_date_value_single_summary_record(lines: Sequence[str]) -> None:
@@ -403,8 +400,8 @@ def _self_test_single_date_value_single_summary_record(lines: Sequence[str]) -> 
             raise AssertionError(f"[self-test] 第{i}行解析得到 0 条记录")
 
         # 打印：如果解析结果是数据类列表，则列表中每个值都要打印
-        print(f"[self-test] #{i} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=10, max_len=160)
+        print(f"[self-test] #{i} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_single_date_text_summary_record(lines: Sequence[str]) -> None:
@@ -432,8 +429,8 @@ def _self_test_single_date_text_summary_record(lines: Sequence[str]) -> None:
             raise AssertionError(f"[self-test] 第{i}行解析得到 0 条记录")
 
         # 打印：如果解析结果是数据类列表，则列表中每个值都要打印
-        print(f"[self-test] #{i} 原文前50={str(line)[:50]!r}")
-        _self_test_print_objs(parsed_list, max_items=10, max_len=180)
+        print(f"[self-test] #{i} 原文={str(line)!r}")
+        _self_test_print_objs(parsed_list)
 
 
 def _self_test_route_raw_personal_data_to_dataclass(
@@ -521,7 +518,7 @@ def _self_test_route_raw_personal_data_to_dataclass(
                     )
 
             # 不打印具体解析结果内容（避免日志过大）；只打印必要的 case/条目与返回数
-            # print(f"    [router] case={exp_entity} #{i} 原文前50={str(line)[:50]!r} 返回数={len(objs)}")
+            # print(f"    [router] case={exp_entity} #{i} 原文={str(line)!r} 返回数={len(objs)}")
 
             passed += 1
 
@@ -655,7 +652,7 @@ def _self_test_unparsed_raw_personal_data(lines: Sequence[str]) -> None:
         if not parsed.个人数据:
             raise AssertionError(f"[self-test] 第{i}行兜底对象的个人数据为空")
         print(f"[self-test] #{i}")
-        print(_indent_lines(parsed.format_print(max_items=6, max_len=220), 2))
+        print(_indent_lines(parsed.format_print(), 2))
 
 
 def _self_test_aggregate_patterns_to_formatted_text(
