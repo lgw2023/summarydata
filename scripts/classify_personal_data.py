@@ -151,7 +151,7 @@ def aggregate(
     list[str],
 ]:
     """
-    示例：演示 `src/data_clean` 三个聚合模块的用法。
+    示例：演示 `src/data_clean` 几个聚合模块的用法。
 
     - `aggregate_format.aggregate_patterns_to_formatted_text`：输出 Markdown 表格文本
     - `aggregate_dataframe.aggregate_patterns_to_dataframes`：输出 DataFrame 列表（带 df.attrs 元信息）
@@ -175,10 +175,14 @@ def aggregate(
     patterns_all = [get_patterns_all(t, strict_uncovered_to_unparsed=strict_uncovered_to_unparsed) for t in person_datas]
     total_patterns = 0
     total_patterns = sum(len(p) for p in patterns_all)
-    # print(f"[info] 输入样例条数={len(person_datas)}，总 patterns 数量={total_patterns}")
-    # print("\n" + "=" * 23 + " patterns 第一个 示例 " + "=" * 23)
-    # print(f"原始数据:\n{person_datas[0]}\n")
-    # print(f"\033[92m{patterns_all[0]}\033[0m")
+    print(f"[info] 输入样例条数={len(person_datas)}，总 patterns 数量={total_patterns}")
+    print("\n" + "=" * 23 + " patterns 第一个 示例 " + "=" * 23)
+    print(f"原始数据:\n{person_datas[0]}\n")
+    # 模拟打印 patterns_all[0] 的原始真实格式，数据类列表
+    print(f"\033[92m[\033[0m")
+    for i in patterns_all[0]:
+        print(f"\033[92m{i},\033[0m")
+    print(f"\033[92m]\033[0m")
 
 
     #########################################################################################################
@@ -209,19 +213,19 @@ def aggregate(
     # 2) aggregate_format：输出 Markdown 表格文本
     # 解析：若干 PersonalDataPattern 列表 -> Markdown 表格文本
     print("\n" + "=" * 24 + " aggregate_format 示例 patterns[0] 聚合结果 " + "=" * 24)
-    # print(f"原始数据:\n{person_datas[0]}\n")
+    print(f"原始数据:\n{person_datas[0]}\n")
     markdown_tables = [
         aggregate_patterns_to_formatted_text(pats, include_loose_lines=include_loose_lines)
         for pats in patterns_all
     ]
-    # print(f"\033[92m{markdown_tables[0]}\033[0m")
+    print(f"\033[92m{markdown_tables[0]}\033[0m")
 
 
     #########################################################################################################
     # 3) aggregate_time：按“时间桶”聚合，输出结构化列表 / JSONL
     # 解析：若干 PersonalDataPattern 列表 -> 结构化列表 / JSONL
-    # print("\n" + "=" * 26 + " aggregate_time_json 示例 patterns[0] 聚合结果 " + "=" * 26)
-    # print(f"原始数据:\n{person_datas[0]}\n")
+    print("\n" + "=" * 26 + " aggregate_time_json 示例 patterns[0] 聚合结果 " + "=" * 26)
+    print(f"原始数据:\n{person_datas[0]}\n")
     time_jsons = [
         aggregate_patterns_by_timejson(
             pats,
@@ -230,26 +234,26 @@ def aggregate(
         )
         for pats in patterns_all
     ]
-    # for b in time_jsons[:1]:
-    #     print(f"\033[92m[\033[0m")
-    #     for i in range(len(b)):
+    for b in time_jsons[:1]:
+        print(f"\033[92m[\033[0m")
+        for i in range(len(b)):
 
-    #         # 整个json dict打印
-    #         # print(f"\033[92m{b[i]}\033[0m")
+            # 整个json dict打印
+            # print(f"\033[92m{b[i]}\033[0m")
 
-    #         # 手动做个模拟dict的格式化打印
-    #         time_obj = b[i].get("time")
-    #         events = b[i].get("events")
-    #         summary = b[i].get("summary")
-    #         fallback = b[i].get("fallback")
-    #         print(f"\033[92m  {'{'}\033[0m")
-    #         print(f"\033[92m    'time': {time_obj},\033[0m")
-    #         print(f"\033[92m    'events': {events},\033[0m")
-    #         print(f"\033[92m    'summary': '{summary}',\033[0m")
-    #         print(f"\033[92m    'fallback': {fallback},\033[0m")
-    #         print(f"\033[92m  {'},'}\033[0m")
+            # 手动做个模拟dict的格式化打印
+            time_obj = b[i].get("time")
+            events = b[i].get("events")
+            summary = b[i].get("summary")
+            fallback = b[i].get("fallback")
+            print(f"\033[92m  {'{'}\033[0m")
+            print(f"\033[92m    'time': {time_obj},\033[0m")
+            print(f"\033[92m    'events': {events},\033[0m")
+            print(f"\033[92m    'summary': '{summary}',\033[0m")
+            print(f"\033[92m    'fallback': {fallback},\033[0m")
+            print(f"\033[92m  {'},'}\033[0m")
 
-    #     print(f"\033[92m]\033[0m")
+        print(f"\033[92m]\033[0m")
 
     #########################################################################################################
     # 4) aggregate_dataline：输出 dataline 风格训练文本（逐行描述）
@@ -265,7 +269,7 @@ def aggregate(
         )
         for pats in patterns_all
     ]
-    # print(f"\033[92m{dataline_texts[0]}\033[0m")
+    print(f"\033[92m{dataline_texts[0]}\033[0m")
 
     return patterns_all, dataframes, wide_tables, markdown_tables, time_jsons, dataline_texts
 
@@ -276,17 +280,17 @@ if __name__ == "__main__":
     sheet_name = 0
     data_col = "data"
 
-
     _xlsx_path = Path(xlsx_path)
     df = pd.read_excel(_xlsx_path, sheet_name=sheet_name, dtype=object)
     cols = [str(c) for c in df.columns]
-    
-    # 取 N 条样例：把每条 data 解析为 dataclass patterns，再做聚合。
+
+    # 构造person_datas的同时，构造剔除无效data的新df
     person_datas: list[str] = []
-    for x in df[data_col].tolist():
-        # pandas 的空值通常是 NaN（float），str() 会变成 "nan"；这里统一过滤掉
+    kept_indices = []
+
+    for idx, x in enumerate(df[data_col].tolist()):
         try:
-            if x is None or bool(pd.isna(x)):  # type: ignore[attr-defined]
+            if x is None or bool(pd.isna(x)):
                 continue
         except Exception:
             pass
@@ -295,11 +299,18 @@ if __name__ == "__main__":
             continue
         if t:
             person_datas.append(t)
+            kept_indices.append(idx)
 
     if not person_datas:
         raise ValueError(f"列 {data_col!r} 中没有可用的非空文本：{_xlsx_path}")
 
 
+    # person_datas 为原始 excel 表格中清洗后的 data 列的值，list[str]
+    # df_valid 为剔除无效data后的新df，与person_datas一一对应。
+    df_valid = df.iloc[kept_indices].reset_index(drop=True)
+
+    
+    # for 陈思远： wide_tables的取值逻辑依然保持不变。
     data_patterns, dataframes, wide_tables, markdown_tables, time_jsons, dataline_texts = aggregate(
         person_datas=person_datas
     )
