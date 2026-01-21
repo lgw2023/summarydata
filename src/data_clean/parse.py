@@ -62,6 +62,23 @@ _DIRTY_ACTIVITY_HEART_RATE_RANGE_AVG_RE = re.compile(
     re.DOTALL,
 )
 
+# 特化脏数据拦截（router 入口级别）：
+# - 形如：
+#   2月17日22时07分体重70.4千克
+# - 问题：缺少“的/是/为/：”等连接词，容易被“单日期数值单项总结”等解析器误判为
+#   (指标="", 数值="22", 单位="时07分体重70.4千克") 这类脏结构，导致 Markdown 表格信息遗漏/空指标行。
+# - 按用户约定：该类数据直接归入 UnparsedRawPersonalData，但在 `原因` 中保留可读的关键信息片段，避免信息丢失。
+_DIRTY_WEIGHT_DETAIL_NO_DELIM_RE = re.compile(
+    r"^\s*"
+    r"(?P<date>\d{1,2}月\d{1,2}日)\s*"
+    r"(?P<time>(?:\d{1,2}\s*[:：]\s*\d{2})|(?:\d{1,2}\s*时\s*\d{1,2}\s*分?))\s*"
+    r"体重\s*"
+    r"(?P<val>[-+]?\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>千克|kg|KG)\b"
+    r"(?P<tail>[\s\S]*)$",
+    re.DOTALL,
+)
+
 _FALLBACK_PARSERS: list[tuple[str, str, Callable[[str], list[PersonalDataPattern]]]] = [
     ("单指标的明细汇总记录", "单指标的明细汇总记录(全量兜底)", lambda s: SingleMetricStatsRecord.from_raw_personal_data(s)),
     ("周期数值对比记录", "周期数值对比记录(全量兜底)", lambda s: PeriodValueCompareRecord.from_raw_personal_data(s)),
@@ -364,6 +381,25 @@ def route_raw_personal_data_to_dataclass(
     if _DIRTY_ACTIVITY_HEART_RATE_RANGE_AVG_RE.search(raw):
         return [UnparsedRawPersonalData(个人数据=raw, 原因="活动心率(范围+平均)脏数据：按特化规则不解析")]
 
+    # 用户允许的特化规则：体重“日期+时间+体重+数值”但缺少连接词的脏数据直接进入 Unparsed（避免误判为空指标行）。
+    m_w = _DIRTY_WEIGHT_DETAIL_NO_DELIM_RE.match(raw)
+    if m_w:
+        val = (m_w.group("val") or "").strip()
+        unit = (m_w.group("unit") or "").strip()
+        # 统一展示单位（让下游“信息覆盖检查”更稳定）
+        unit_norm = "千克" if unit.lower() == "kg" else (unit or "千克")
+        hint = f"体重 {val} {unit_norm}".strip()
+        return [
+            UnparsedRawPersonalData(
+                个人数据=raw,
+                原因=(
+                    "体重明细脏数据：日期+时间后直接拼接体重数值，缺少“的/是/为/：”等连接词，"
+                    "会造成解析歧义；按特化规则归入未解析。"
+                    f"抽取信息：{hint}"
+                ),
+            )
+        ]
+
     # 注意：这里有一些“当前体系不覆盖”的句式（来自金标准 self-test），
     # 这些句式即使能被某些解析器“形式上解析出数值/单位”，语义也会被误归类。
     #
@@ -490,6 +526,13 @@ def route_raw_personal_data_to_dataclass(
         # - 允许数值本身为时间点（如 01:40）；但要避免把“单指标的明细记录(YYYY/MM/DD HH:mm ...)”误判进来
         if re.search(r"\d{4}[\/\.-]\d{1,2}[\/\.-]\d{1,2}\s+\d{1,2}:\d{2}", s):
             return False
+        # 同理：避免把“明细记录(YYYY年MM月DD日HH时mm分...)”误判为单日期总结
+        if re.search(
+            r"^\s*\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日\s*"
+            r"(?:\d{1,2}:\d{2}|\d{1,2}\s*(?:时|点)\s*\d{1,2}\s*(?:分)?)",
+            s,
+        ):
+            return False
         segs = [x.strip() for x in _SPLIT_RE.split(s) if x and x.strip()]
         if not segs:
             return False
@@ -600,14 +643,15 @@ def route_raw_personal_data_to_dataclass(
         # 形如：
         # - 2025/2/1 06:07的户外跑步距离为：5.11千米
         # - 2月13日20时33分的体重是61.1 千克
-        # 关键：必须出现 “时间 + 的” 以避免把 “4/23入睡时间01:40偏晚” 这类“单日期总结”误判成明细记录。
+        # 关键：必须出现“起始即 日期 + 时间点”，并且整句包含“为/是”这类赋值语义，
+        # 以避免把 “4/23入睡时间01:40偏晚” 这种“单日期总结(时间点是数值本身)”误判成明细记录。
         return bool(
             re.search(
-                r"(?P<date>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*"
-                r"(?P<time>\d{1,2}:\d{2}|\d{1,2}\s*(?:时|点)\s*\d{1,2}\s*(?:分)?)\s*的",
+                r"^\s*(?P<date>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*"
+                r"(?P<time>\d{1,2}:\d{2}|\d{1,2}\s*(?:时|点)\s*\d{1,2}\s*(?:分)?)\s*(?:的)?",
                 s,
             )
-        )
+        ) and (("为" in s) or ("是" in s))
 
     def _is_all_unparsed(objs: list[PersonalDataPattern]) -> bool:
         return all(isinstance(x, UnparsedRawPersonalData) for x in objs)

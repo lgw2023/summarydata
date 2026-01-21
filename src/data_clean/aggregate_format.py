@@ -611,8 +611,16 @@ def aggregate_patterns_to_formatted_text(
             if row is None:
                 row = {"日期": d, "时间": t}
                 groups[key] = row
-            # 同一 cell 多次出现：后写覆盖（更接近“最新值”直觉）
-            row[col] = v0
+            # 同一 cell 多次出现：
+            # - 旧逻辑“后写覆盖”会造成信息丢失（例如脏数据：同一日期出现 00:12 与 22:50）
+            # - 新逻辑：若新旧值均非缺失且不相同，则合并展示（去重，保留出现顺序）
+            old = _safe_str(row.get(col, ""))
+            if old and old != "-" and v0 and v0 != "-" and v0 != old:
+                parts = [p.strip() for p in old.split(" / ") if p.strip()]
+                if v0 not in parts:
+                    row[col] = old + " / " + v0
+            else:
+                row[col] = v0
 
             if col not in col_seen_set:
                 col_seen.append(col)
@@ -796,8 +804,16 @@ def aggregate_patterns_to_formatted_text(
             if row is None:
                 row = {"日期": d}
                 groups[d] = row
-            # 同一 cell 多次出现：后写覆盖（更接近"最新值"直觉）
-            row[col] = v0
+            # 同一 cell 多次出现：
+            # - 旧逻辑“后写覆盖”会造成信息丢失（例如同一日期两条入睡时间）
+            # - 新逻辑：若新旧值均非缺失且不相同，则合并展示（去重，保留出现顺序）
+            old = _safe_str(row.get(col, ""))
+            if old and old != "-" and v0 and v0 != "-" and v0 != old:
+                parts = [p.strip() for p in old.split(" / ") if p.strip()]
+                if v0 not in parts:
+                    row[col] = old + " / " + v0
+            else:
+                row[col] = v0
             
             if col not in col_seen_set:
                 col_seen.append(col)

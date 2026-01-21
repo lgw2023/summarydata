@@ -298,6 +298,13 @@ def check_aggregate_dataframes_by_llm(
         wt_text = _df_to_text(wt) if wt is not None else "（空）"
         wt_text = wt_text.replace("不适用", " ")
 
+        # if i not in [108, 47, 105, 25]:
+        #     continue
+        # if i in [108, 47, 105, 25]:
+        #     print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
+        #     print(("【聚合结果 dfs_text】\n" f"{dfs_text}\n"))
+        #     print(("【聚合结果 wt_text】\n" f"{wt_text}\n"))
+
         res_dfs = _call_llm_compare(
             client=client,
             model_name=model_name,
@@ -393,6 +400,12 @@ def check_aggregate_markdown_tables_by_llm(
         if not md_text:
             md_text = ""
 
+        # if i not in [108, 47, 105, 25]:
+        #     continue
+        # if i in [108, 47, 105, 25]:
+        #     print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
+        #     print(("【聚合结果 md_text】\n" f"{md_text}\n"))
+
         res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=md_text, system_prompt=system_prompt)
         check_markdown_tables.append(res)
         if not res["same"]:
@@ -464,6 +477,12 @@ def check_aggregate_time_jsons_by_llm(
         tj = time_jsons[i] if i < len(time_jsons) else []
         rebuild_text = _time_jsons_to_text(tj)
 
+        # if i not in [108, 47, 105, 25]:
+        #     continue
+        # if i in [108, 47, 105, 25]:
+        #     print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
+        #     print(("【聚合结果 rebuild_text】\n" f"{rebuild_text}\n"))
+
         res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=rebuild_text, system_prompt=system_prompt)
         check_time_jsons.append(res)
         if not res["same"]:
@@ -527,7 +546,13 @@ def check_aggregate_dataline_texts_by_llm(
         dl_text = dataline_texts[i] if i < len(dataline_texts) else ""
         if not dl_text:
             dl_text = ""
-
+        
+        # if i not in [108, 47, 105, 25]:
+        #     continue
+        # if i in [108, 47, 105, 25]:
+        #     print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
+        #     print(("【聚合结果 dataline_texts】\n" f"{dl_text}\n"))
+            
         res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=dl_text, system_prompt=system_prompt)
         check_dataline_texts.append(res)
         if not res["same"]:

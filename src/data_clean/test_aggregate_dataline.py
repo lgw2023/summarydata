@@ -220,6 +220,28 @@ def _self_test_emotion_pressure_and_heart_health_not_mixed() -> None:
         raise AssertionError(f"[self-test][pressure_heart] 心脏健康仍落到类型：无：\n输出前1200={out[:1200]!r}")
 
 
+def _self_test_sport_line_grouping() -> None:
+    """
+    基础回归：
+    - dataline 输出应能同时包含“运动类型/健康类型”两大类行，并且不返回空串
+    - 这是一个偏“冒烟测试”的兜底检查：避免聚合层改动导致整段输出退化为原文/空文本
+    """
+    raw = "\n".join(
+        [
+            "2025/4/22 05:50的户外跑步距离为：5.11千米,",
+            "2025/4/22 06:00的血氧饱和度为：97.00%,",
+        ]
+    )
+    patterns = explode_newlines_and_route_to_dataclasses(raw)
+    out = aggregate_patterns_to_dataline_text(patterns)
+    if not isinstance(out, str) or not out.strip():
+        raise AssertionError(f"[self-test][sport_grouping] 输出为空：out={out!r}")
+    if "运动类型：" not in out:
+        raise AssertionError(f"[self-test][sport_grouping] 未看到运动类型行：\nout={out!r}")
+    if "健康类型：" not in out:
+        raise AssertionError(f"[self-test][sport_grouping] 未看到健康类型行：\nout={out!r}")
+
+
 def _self_test_steps_swim_style_and_dive_depth() -> None:
     """
     回归用例（批量覆盖你提到的类似问题）：
@@ -718,6 +740,56 @@ def _self_test_total_consume_calories_should_not_become_type() -> None:
         raise AssertionError(f"[self-test][consume] 未出现期望指标“总消耗运动热量”：\nout={out!r}")
 
 
+def _self_test_dirty_cn_full_datetime_without_de_should_parse_as_detail() -> None:
+    """
+    回归用例（对应你反馈的脏数据）：
+    - 形如：2025年02月16日19时17分户外跑步距离为5.52千米
+    - 特点：带“YYYY年MM月DD日HH时mm分”，但缺少“的”（与原先明细口径不一致）
+
+    期望：
+    - router 能把每一行都识别为 SingleMetricDetailRecord（明细记录）
+    - 聚合输出包含归一化后的时间点与运动类型（2025/2/16 19:17 运动类型：户外跑步）
+    - 至少保留关键指标：距离、步数（避免信息被误判/丢失）
+    """
+    raw = "\n".join(
+        [
+            "2025年02月16日19时17分户外跑步最快配速为6分0秒/公里",
+            "2025年02月16日19时17分户外跑步配速为6分27秒/公里",
+            "2025年02月16日19时17分户外跑步步数为6306步",
+            "2025年02月16日19时17分户外跑步热量为391千卡",
+            "2025年02月16日19时17分户外跑步最大步频为197步/分钟",
+            "2025年02月16日19时17分户外跑步步频为176步/分钟",
+            "2025年02月16日19时17分户外跑步用时为35分38秒",
+            "2025年02月16日19时17分户外跑步最大心率为163次/分钟",
+            "2025年02月16日19时17分户外跑步心率为142次/分钟",
+            "2025年02月16日19时17分户外跑步距离为5.52千米",
+            "2025年02月16日19时17分户外跑步速度为9.29公里/小时",
+        ]
+    )
+    patterns = explode_newlines_and_route_to_dataclasses(raw)
+    if not patterns:
+        raise AssertionError("[self-test][dirty_cn_datetime] router 返回空列表")
+    if any(isinstance(x, UnparsedRawPersonalData) for x in patterns):
+        bad = next(x for x in patterns if isinstance(x, UnparsedRawPersonalData))
+        assert isinstance(bad, UnparsedRawPersonalData)
+        raise AssertionError(f"[self-test][dirty_cn_datetime] 仍存在未解析：原因={bad.原因!r} 数据={bad.个人数据!r}")
+    if not all(isinstance(x, SingleMetricDetailRecord) for x in patterns):
+        raise AssertionError(
+            f"[self-test][dirty_cn_datetime] 类型不一致：{[type(x).__name__ for x in patterns]!r}"
+        )
+
+    out = aggregate_patterns_to_dataline_text(patterns)
+    if "2025/2/16 19:17 运动类型：户外跑步" not in out:
+        raise AssertionError(
+            f"[self-test][dirty_cn_datetime] 未看到期望的时间点+运动类型行：\n"
+            f"expect_substr={'2025/2/16 19:17 运动类型：户外跑步'!r}\n"
+            f"out_head={out[:900]!r}"
+        )
+    for k in ("距离:", "步数:"):
+        if k not in out:
+            raise AssertionError(f"[self-test][dirty_cn_datetime] 未看到关键字段 {k!r}：\nout={out!r}")
+
+
 def _self_test_period_range_with_slash_date_and_trailing_day_should_parse() -> None:
     """
     回归用例（对应你反馈的 bug）：
@@ -743,6 +815,34 @@ def _self_test_period_range_with_slash_date_and_trailing_day_should_parse() -> N
     for k in ("平均深睡时长:", "最高深睡时长:", "最低深睡时长:"):
         if k not in out:
             raise AssertionError(f"[self-test][slash_day_to] 未看到期望字段 {k!r}：\nout={out!r}")
+
+
+def _self_test_stats_composite_range_avg_should_keep_daily_avg() -> None:
+    """
+    回归用例：
+    - stats-composite 明细列表里出现“日期 + 范围 + 平均”的脏数据时，不应把“平均xx”丢掉。
+      例如：压力：[2月18日22-26,平均24,...]
+
+    期望：
+    - 每日行能输出“压力: 平均24/平均23...”等片段（避免信息遗漏）
+    """
+    raw = (
+        "压力：[2月18日22-26,平均24,2月19日22-26,平均24,2月20日21-25,平均23,2月22日19-23,平均21,2月23日20-24,平均22], "
+        "平均压力22.8正常，最低压力19正常，最高压力26正常"
+    )
+    patterns = explode_newlines_and_route_to_dataclasses(raw)
+    out = aggregate_patterns_to_dataline_text(patterns)
+    for expect in (
+        "2/18 健康类型：情绪健康， 压力: 22-26（平均24）",
+        "2/19 健康类型：情绪健康， 压力: 22-26（平均24）",
+        "2/20 健康类型：情绪健康， 压力: 21-25（平均23）",
+        "2/22 健康类型：情绪健康， 压力: 19-23（平均21）",
+        "2/23 健康类型：情绪健康， 压力: 20-24（平均22）",
+    ):
+        if expect not in out:
+            raise AssertionError(
+                f"[self-test][stats_range_avg] 未看到期望输出片段：\nexpect_substr={expect!r}\nout={out!r}"
+            )
 
 
 if __name__ == "__main__":
@@ -812,5 +912,7 @@ if __name__ == "__main__":
     _self_test_running_advanced_metrics_should_split_prefix()
     _self_test_total_consume_calories_should_not_become_type()
     _self_test_period_range_with_slash_date_and_trailing_day_should_parse()
+    _self_test_stats_composite_range_avg_should_keep_daily_avg()
+    _self_test_dirty_cn_full_datetime_without_de_should_parse_as_detail()
     print("[self-test] test_aggregate_dataline.py 全部通过")
 

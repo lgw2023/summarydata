@@ -702,3 +702,27 @@ def _self_test_aggregate_patterns_to_formatted_text(
         print(f"[self-test] aggregate_patterns_to_formatted_text 跳过空样本：{skipped_empty}")
     print(f"[self-test] aggregate_patterns_to_formatted_text 通过：{ok}/{len(xs) - skipped_empty}")
 
+
+def _self_test_stats_composite_duplicate_cell_merge() -> None:
+    """
+    回归测试：
+    - 单指标的明细汇总记录（如入睡时间）在明细列表里出现“同一日期多个值”时，
+      Markdown 宽表输出不应覆盖导致信息丢失，而应合并展示。
+
+    该类脏数据常见原因之一：明细列表缺少逗号分割，或设备/来源写入了多条记录到同一天。
+    """
+    raw = (
+        "入睡时间：[2月2日22:22 2月5日00:12 2月5日22:50 2月6日22:30]，"
+        "平均入睡时间22:46正常，最早入睡时间21:34正常，最晚入睡时间00:12偏晚"
+    )
+    patterns = explode_newlines_and_route_to_dataclasses(raw)
+    out = aggregate_patterns_to_formatted_text(patterns)
+
+    # 断言：02月05日单元格应同时保留 00:12 与 22:50（顺序以出现为准）
+    if "02月05日" not in out:
+        raise AssertionError(f"[self-test][dup-merge] 输出缺少 02月05日 行：out前300={out[:300]!r}")
+    if ("00:12" not in out) or ("22:50" not in out):
+        raise AssertionError(f"[self-test][dup-merge] 输出未同时包含 00:12 与 22:50：out前400={out[:400]!r}")
+    if "00:12 / 22:50" not in out and "22:50 / 00:12" not in out:
+        raise AssertionError(f"[self-test][dup-merge] 输出未出现合并分隔符：out前450={out[:450]!r}")
+

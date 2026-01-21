@@ -1724,10 +1724,11 @@ _SEG_RE_1 = re.compile(
     r"(?P<name>.+?)为[:：]\s*(?P<val>.+?)\s*$"
 )
 
-# 宽松兜底：YYYY/M/D [HH:mm] ...（不强依赖“的/为：”）
+# 宽松兜底：日期 [时间点] ...（不强依赖“的/为：”）
+# - 兼容：YYYY/M/D、YYYY-M-D、YYYY.M.D、YYYY年M月D日、M/D、M月D日
 _SEG_RE_2 = re.compile(
     # 只扩展“带年份”的日期支持 . / - 分隔；不扩展 MM.DD 以避免 79.0 误判日期
-    r"^\s*(?P<date>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*"
+    r"^\s*(?P<date>(?:\d{4}|\d{2})[\/\.-]\d{1,2}[\/\.-]\d{1,2}|\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*"
     r"(?P<time>\d{1,2}:\d{2}|\d{1,2}\s*(?:时|点)\s*\d{1,2}\s*(?:分)?)?\s*"
     r"(?P<rest>.+?)\s*$"
 )
@@ -3706,6 +3707,42 @@ def _parse_stats_composite_line(
     unit_hints: list[str] = []
 
     if inside:
+        def _build_daily_value_keep_range_and_avg(val: str) -> tuple[str, bool, str]:
+            """
+            处理 stats-composite 明细中的“日期 + 范围 + 平均”口径：
+            - 例如：2月18日22-26,平均24  =>  22-26（平均24）
+            - 例如：2月17日36.6-37.0℃,平均36.8℃  =>  36.6-37.0℃（平均36.8℃）
+
+            设计取舍：
+            - `SingleMetricStatsRecord` 的“每日期数值”字段只容纳一个 value；
+              对于“范围+平均”的脏数据，这里把两者合并到同一个字符串中，避免信息遗漏。
+            - 该类合并后的 value 不再是“纯数值”，为避免单位推断/归一化误伤，
+              返回值会带 `is_composite=True`，调用方应跳过 `_normalize_value_and_unit()`。
+            """
+            t = (val or "").strip().strip("，,;；、 ")
+            if not t:
+                return t, False, "无"
+
+            # 抽取“平均xx”片段（直到下一个分隔符/括号结束）
+            m_avg = re.search(r"平均\s*(?P<avg>[^,，\]】;；、]+)", t)
+            avg = (m_avg.group("avg") or "").strip().strip("，,;；、 ") if m_avg else ""
+
+            # 取“范围/原值”的首段（即平均之前的那段）
+            first = re.split(r"[，,;；、]\s*", t, maxsplit=1)[0].strip()
+            base = first if first else t
+
+            # 同时存在 base 与 avg：组合展示，并从 base/avg 中单独推断单位
+            if avg:
+                unit_hint = _infer_unit_from_value_str(base) if base else "无"
+                if unit_hint in (None, "", "无") and avg:
+                    unit_hint = _infer_unit_from_value_str(avg)
+                # 保留原始 base（可能含单位），并把平均放在括号里
+                return f"{base}（平均{avg}）", True, (unit_hint or "无")
+
+            # 无平均：原样返回首段；单位同样从首段推断
+            unit_hint2 = _infer_unit_from_value_str(base) if base else "无"
+            return base, False, (unit_hint2 or "无")
+
         def _split_inside_items(s: str) -> list[str]:
             """
             stats-composite 明细列表切段：
@@ -3721,7 +3758,22 @@ def _parse_stats_composite_line(
             # 1) 常规：按逗号切
             xs = [x.strip() for x in _SPLIT_RE.split(t) if x and x.strip()]
             if len(xs) >= 2:
-                return xs
+                # 兼容“范围+平均”的口径：把不带日期的“平均xx...”片段并回前一个日期片段
+                # 例如：["2月18日22-26", "平均24", "2月19日22-26", "平均24", ...]
+                #   ->  ["2月18日22-26，平均24", "2月19日22-26，平均24", ...]
+                merged: list[str] = []
+                for tok in xs:
+                    tok2 = (tok or "").strip()
+                    if (
+                        tok2.startswith("平均")
+                        and not _DATE_TOKEN_RE.search(tok2)
+                        and merged
+                        and _DATE_TOKEN_RE.search(merged[-1] or "")
+                    ):
+                        merged[-1] = (merged[-1] or "").rstrip("，,;；、 ") + "，" + tok2
+                    else:
+                        merged.append(tok2)
+                return [x for x in merged if x and x.strip()]
 
             # 2) 防御：若同一段里出现 2+ 个日期 token，则按“日期 token 的起止”切段
             ms = list(_DATE_TOKEN_RE.finditer(t))
@@ -3747,21 +3799,37 @@ def _parse_stats_composite_line(
             if not d or not v:
                 continue
 
+            # “日期 + 范围 + 平均”口径：保留范围与平均，避免遗漏
+            v, is_composite_v, v_unit_hint = _build_daily_value_keep_range_and_avg(v)
+
             if force_unitless_duration:
                 v = _normalize_unitless_duration_value_for_display(v)
 
-            if inferred_type is None and v:
-                inferred_type = _infer_value_type_from_value_str(v)
+            if v:
+                # 复合值（范围+平均）不是“纯数值”，类型按 String 处理更稳
+                vt_candidate = "String" if is_composite_v else _infer_value_type_from_value_str(v)
+                if inferred_type is None:
+                    inferred_type = vt_candidate
+                # 允许从 Int 升级到 Float（例如 明细为整数，但汇总均值为小数）
+                elif inferred_type == "Int" and vt_candidate == "Float":
+                    inferred_type = "Float"
             if not force_unitless_duration:
-                vt0: ValueType = inferred_type or _infer_value_type_from_value_str(v)
-                u0 = _infer_unit_from_value_str(v)
-                v_norm, u_norm = _normalize_value_and_unit(v, vt0, u0)
-                # 记录归一后的值/单位
-                v = v_norm
-                if inferred_unit is None and v:
-                    inferred_unit = u_norm
-                if v:
-                    unit_hints.append(u_norm)
+                if is_composite_v:
+                    # 复合字符串：跳过归一化；单位从 base/avg 的 hint 推断
+                    if inferred_unit is None and v:
+                        inferred_unit = v_unit_hint if v_unit_hint else "无"
+                    if v:
+                        unit_hints.append(v_unit_hint if v_unit_hint else "无")
+                else:
+                    vt0: ValueType = inferred_type or _infer_value_type_from_value_str(v)
+                    u0 = _infer_unit_from_value_str(v)
+                    v_norm, u_norm = _normalize_value_and_unit(v, vt0, u0)
+                    # 记录归一后的值/单位
+                    v = v_norm
+                    if inferred_unit is None and v:
+                        inferred_unit = u_norm
+                    if v:
+                        unit_hints.append(u_norm)
 
             dates.append(_normalize_date_cn(d))
             values.append(v)
@@ -3778,8 +3846,12 @@ def _parse_stats_composite_line(
                 nm = seg
             if force_unitless_duration and val:
                 val = _normalize_unitless_duration_value_for_display(val)
-            if inferred_type is None and val:
-                inferred_type = _infer_value_type_from_value_str(val)
+            if val:
+                vt_candidate = _infer_value_type_from_value_str(val)
+                if inferred_type is None:
+                    inferred_type = vt_candidate
+                elif inferred_type == "Int" and vt_candidate == "Float":
+                    inferred_type = "Float"
             if not force_unitless_duration and val:
                 vt0: ValueType = inferred_type or _infer_value_type_from_value_str(val)
                 u0 = _infer_unit_from_value_str(val)
