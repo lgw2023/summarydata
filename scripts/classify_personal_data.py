@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import json
+import os
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 import pandas as pd
@@ -12,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.data_clean import *  # noqa: F403
 from src.data_clean import __all__  # noqa: F401
+from src.utils.env import load_env
 
 if TYPE_CHECKING:  # pragma: no cover
     from src.data_clean.models import PersonalDataPattern
@@ -122,7 +124,6 @@ def get_time_jsons(
 def get_dataline_texts(
     personal_data_text: str,
     *,
-    max_lines: int | None = 500,
     include_unconstructable_types: bool = True,
     unconstructable_prefix_type: bool = True,
     strict_uncovered_to_unparsed: bool = True,
@@ -134,7 +135,6 @@ def get_dataline_texts(
     patterns = get_patterns_all(personal_data_text, strict_uncovered_to_unparsed=strict_uncovered_to_unparsed)
     return aggregate_patterns_to_dataline_text(
         patterns,
-        max_lines=max_lines,
         include_unconstructable_types=include_unconstructable_types,
         unconstructable_prefix_type=unconstructable_prefix_type,
     )
@@ -263,7 +263,6 @@ def aggregate(
     dataline_texts = [
         aggregate_patterns_to_dataline_text(
             pats,
-            max_lines=500,
             include_unconstructable_types=True,
             unconstructable_prefix_type=True,
         )
@@ -310,7 +309,6 @@ if __name__ == "__main__":
     df_valid = df.iloc[kept_indices].reset_index(drop=True)
 
     
-    # for 陈思远： wide_tables的取值逻辑依然保持不变。
     data_patterns, dataframes, wide_tables, markdown_tables, time_jsons, dataline_texts = aggregate(
         person_datas=person_datas
     )
