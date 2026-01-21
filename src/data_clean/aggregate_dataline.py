@@ -1196,7 +1196,6 @@ def _events_from_patterns(patterns: Sequence[PersonalDataPattern]) -> tuple[list
 def aggregate_patterns_to_datalines(
     patterns: Sequence[PersonalDataPattern],
     *,
-    max_lines: int | None = None,
     include_unconstructable_types: bool = True,
     unconstructable_prefix_type: bool = True,
 ) -> list[str]:
@@ -1403,18 +1402,13 @@ def aggregate_patterns_to_datalines(
 
     line_items.sort(key=lambda x: x[0])
 
-    # 先按 max_lines 截断“非空业务行”（空行分隔符不计入 max_lines）
-    items_sorted = list(line_items)
-    if max_lines is not None:
-        items_sorted = items_sorted[: max(0, int(max_lines))]
-
     # 展示层分隔（不改变原排序逻辑）：
     # - 大类（运动/健康/其它）切换：插入空行
     # - 同一大类内，具体类型（如：所有运动/睡眠/血氧饱和度...）切换：插入空行
     lines: list[str] = []
     prev_category: int | None = None
     prev_type: str | None = None
-    for k, ln in items_sorted:
+    for k, ln in line_items:
         # k[0] 是 category_order（0/1/2）
         cat = int(k[0]) if k else 2
         # k[1] 是具体类型名（sport_label）
@@ -1448,7 +1442,6 @@ def aggregate_patterns_to_datalines(
 def aggregate_patterns_to_dataline_text(
     patterns: Sequence[PersonalDataPattern],
     *,
-    max_lines: int | None = None,
     include_unconstructable_types: bool = True,
     unconstructable_prefix_type: bool = True,
 ) -> str:
@@ -1457,7 +1450,6 @@ def aggregate_patterns_to_dataline_text(
     """
     lines = aggregate_patterns_to_datalines(
         patterns,
-        max_lines=max_lines,
         include_unconstructable_types=include_unconstructable_types,
         unconstructable_prefix_type=unconstructable_prefix_type,
     )

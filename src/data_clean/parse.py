@@ -47,6 +47,21 @@ from .models import (
 _SPLIT_RE = re.compile(r"[，,]\s*")
 _FIRST_NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
 
+# 特化脏数据拦截（router 入口级别）：
+# - 形如：
+#   活动心率：[4月12日87-194, 平均145次/分钟, 4月13日100-177, 平均132次/分钟, ...]，
+#   平均活动心率128次/分钟，最低活动心率72次/分钟，最高活动心率194次/分钟
+# - 该类数据会被“周期数值多项总结”等解析器误抢解析；按用户约定，直接归入 UnparsedRawPersonalData。
+_DIRTY_ACTIVITY_HEART_RATE_RANGE_AVG_RE = re.compile(
+    r"^\s*活动心率\s*[:：]\s*[\[【][\s\S]*?"
+    r"(?:\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2})\s*\d+\s*-\s*\d+[\s\S]*?"
+    # 明细列表内混入“平均xx(次/分钟)?”，单位可能缺失
+    r"平均\s*\d+(?:\s*(?:次\s*/\s*分钟|bpm|BPM))?[\s\S]*?[\]】][\s\S]*?"
+    # 末尾汇总必须包含“平均活动心率xx(次/分钟)?”，单位也可能缺失
+    r"平均\s*活动心率\s*\d+(?:\s*(?:次\s*/\s*分钟|bpm|BPM))?",
+    re.DOTALL,
+)
+
 _FALLBACK_PARSERS: list[tuple[str, str, Callable[[str], list[PersonalDataPattern]]]] = [
     ("单指标的明细汇总记录", "单指标的明细汇总记录(全量兜底)", lambda s: SingleMetricStatsRecord.from_raw_personal_data(s)),
     ("周期数值对比记录", "周期数值对比记录(全量兜底)", lambda s: PeriodValueCompareRecord.from_raw_personal_data(s)),
@@ -344,6 +359,10 @@ def route_raw_personal_data_to_dataclass(
     raw = str(raw_line or "").strip()
     if not raw:
         return [UnparsedRawPersonalData(个人数据=raw, 原因="空行，router 无法判定数据类型")]
+
+    # 用户允许的特化规则：活动心率“数字范围 + 平均”脏数据直接进入 Unparsed（避免被其它解析器误判）。
+    if _DIRTY_ACTIVITY_HEART_RATE_RANGE_AVG_RE.search(raw):
+        return [UnparsedRawPersonalData(个人数据=raw, 原因="活动心率(范围+平均)脏数据：按特化规则不解析")]
 
     # 注意：这里有一些“当前体系不覆盖”的句式（来自金标准 self-test），
     # 这些句式即使能被某些解析器“形式上解析出数值/单位”，语义也会被误归类。

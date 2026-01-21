@@ -94,7 +94,7 @@ def _self_test_jump_rope_avg_speed_and_count() -> None:
         if ("跳绳平均速度为" in x) and ("跳绳个数为" in x)
     )
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=500)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     # 核心断言：运动类型应为“跳绳”，且同一行可同时包含平均速度与个数
     expect_prefix = "2025/1/24 05:52 运动类型：跳绳"
@@ -119,7 +119,7 @@ def _self_test_rowing_machine_stroke_rate() -> None:
 
     raw = next(x for x in list(test_SingleMetricDetailRecord) if "划船机桨频为" in x)
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=500)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     # 核心断言：两条时间点都应解析为“划船机 + 桨频”
     expect_1 = "2025/2/17 20:35 运动类型：划船机， 桨频: 18.00"
@@ -148,7 +148,7 @@ def _self_test_activity_calories_not_in_sport() -> None:
 
     raw = next(x for x in list(test_SingleMetricDetailRecord) if "泳池游泳活动热量为" in x)
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=5000)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     if "运动类型：泳池游泳活动" in out:
         raise AssertionError(f"[self-test][activity_calories] sport 错误包含“活动”：\n输出前900={out[:900]!r}")
@@ -205,7 +205,7 @@ def _self_test_emotion_pressure_and_heart_health_not_mixed() -> None:
         ]
     )
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=5000)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     # 1) 心脏健康缺失提示应归到“心脏健康”
     if ("健康类型：心脏健康" not in out) or ("心脏健康数据: 没有查询到" not in out):
@@ -268,7 +268,7 @@ def _self_test_steps_swim_style_and_dive_depth() -> None:
 
     for raw in raws:
         patterns = explode_newlines_and_route_to_dataclasses(raw)
-        out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+        out = aggregate_patterns_to_dataline_text(patterns)
 
         if "运动类型：无" in out:
             raise AssertionError(f"[self-test][batch_fix] 仍出现运动类型=无：raw={raw!r}\n输出前900={out[:900]!r}")
@@ -334,7 +334,7 @@ def _self_test_period_summary_sport_and_metric_split() -> None:
 
     for raw, expect, forbid_subs in raws:
         patterns = explode_newlines_and_route_to_dataclasses(raw)
-        out = aggregate_patterns_to_dataline_text(patterns, max_lines=200)
+        out = aggregate_patterns_to_dataline_text(patterns)
         if expect not in out:
             raise AssertionError(f"[self-test][period_split] 输出不匹配：\nraw={raw!r}\nexpect={expect!r}\nout={out!r}")
         for bad in forbid_subs:
@@ -412,7 +412,7 @@ def _self_test_health_sleep_blood_oxygen_bmi_and_walk_summary() -> None:
 
     for raw, expect in cases:
         patterns = explode_newlines_and_route_to_dataclasses(raw)
-        out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+        out = aggregate_patterns_to_dataline_text(patterns)
         if expect not in out:
             raise AssertionError(f"[self-test][health_sleep_walk] 输出不匹配：\nraw={raw!r}\nexpect={expect!r}\nout={out!r}")
         if "类型：无" in out:
@@ -427,7 +427,7 @@ def _self_test_single_date_value_single_summary_to_dataline() -> None:
     """
     raw = "4/23压力均值78分偏高"
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     if "数据类型：单日期数值单项总结" in out:
         raise AssertionError(f"[self-test][single_date_value_single] 仍被当作不可重构类型：\nraw={raw!r}\nout={out!r}")
@@ -492,7 +492,7 @@ def _self_test_metric_suffix_trailing_wei_should_split() -> None:
 
     for raw, expect in cases:
         patterns = explode_newlines_and_route_to_dataclasses(raw)
-        out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+        out = aggregate_patterns_to_dataline_text(patterns)
         if expect not in out:
             raise AssertionError(f"[self-test][trailing_wei] 输出不匹配：\nraw={raw!r}\nexpect={expect!r}\nout={out!r}")
         if "类型：无" in out:
@@ -514,7 +514,7 @@ def _self_test_merge_multi_timepoints_same_day_same_metric() -> None:
         ]
     )
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     expect = (
         "2025/4/22 健康类型：血氧饱和度， "
@@ -544,7 +544,7 @@ def _self_test_sort_by_real_date_within_same_type() -> None:
         ]
     )
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+    out = aggregate_patterns_to_dataline_text(patterns)
     lines_out = [ln.strip() for ln in out.splitlines() if ln.strip()]
 
     # 三条都应归到“心脏健康”，并按日期升序：2/1, 2/2, 2/10
@@ -582,7 +582,7 @@ def _self_test_single_metric_stats_summary_should_have_date_range() -> None:
         "6月25日33分钟,6月26日32分钟] , 平均零星小睡时长34分钟正常, 最高零星小睡时长1小时16分钟偏长, 最低零星小睡时长20分钟正常"
     )
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=5000)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     if "无时间~无时间" in out:
         raise AssertionError(f"[self-test][single_metric_stats_summary_range] 仍出现无时间：\nraw={raw!r}\nout={out!r}")
@@ -607,7 +607,7 @@ def _self_test_missing_blood_pressure_and_sugar_should_be_domain() -> None:
         ]
     )
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     if "8/8 健康类型：血糖" not in out or "血糖数据:" not in out:
         raise AssertionError(
@@ -635,7 +635,7 @@ def _self_test_period_metric_suffix_then_agg_tail_should_split() -> None:
         ]
     )
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     if "2/8~2/22 类型：无" in out:
         raise AssertionError(f"[self-test][period_suffix_then_agg_tail] 仍出现类型=无：\nraw={raw!r}\nout={out!r}")
@@ -669,7 +669,7 @@ def _self_test_running_advanced_metrics_should_split_prefix() -> None:
         ]
     )
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     # 核心断言：落到户外跑步行，而不是“类型：无”或把“前脚掌触地”当运动类型
     if "2025/6/26 18:09 运动类型：户外跑步" not in out:
@@ -708,7 +708,7 @@ def _self_test_total_consume_calories_should_not_become_type() -> None:
     """
     raw = "2/9~8/8的跑步总消耗热量为3523千卡"
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     if "类型：跑步总消耗" in out:
         raise AssertionError(f"[self-test][consume] 仍出现错误类型“跑步总消耗”：\nout={out!r}")
@@ -730,7 +730,7 @@ def _self_test_period_range_with_slash_date_and_trailing_day_should_parse() -> N
     """
     raw = "2025/2/1日到2025年6月16日平均深睡时长2小时10分钟, 最高深睡时长2小时40分钟, 最低深睡时长1小时25分钟"
     patterns = explode_newlines_and_route_to_dataclasses(raw)
-    out = aggregate_patterns_to_dataline_text(patterns, max_lines=2000)
+    out = aggregate_patterns_to_dataline_text(patterns)
 
     if "类型：无， 日到:" in out or "日到:" in out:
         raise AssertionError(f"[self-test][slash_day_to] 仍出现错误拆分（日到 变成指标名）：\nraw={raw!r}\nout={out!r}")

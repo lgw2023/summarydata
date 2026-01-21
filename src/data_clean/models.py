@@ -2779,30 +2779,45 @@ def _parse_period_text_summary_line(
     descs: list[str] = []
 
     inferred_name: str | None = 指标名称
+    last_range: tuple[str, str] | None = None
 
-    for seg in segments:
-        m = _PERIOD_TEXT_SUMMARY_SEG_RE.match(seg)
-        if not m:
-            continue
-        st = str(m.group("start") or "").strip()
-        ed = str(m.group("end") or "").strip() or st  # 单日期：结束日期=开始日期
-        rest = str(m.group("rest") or "").strip()
-        if not st or not rest:
-            continue
-
-        st2 = _normalize_date_cn(st)
-        m_y = re.fullmatch(r"(?P<y>\d{4})年\d{2}月\d{2}日", st2)
-        y_default: int | None = int(m_y.group("y")) if m_y else None
-        ed2 = _normalize_date_cn(ed, default_year=y_default)
-
-        nm, desc = _extract_metric_and_status_from_text(rest)
+    def _append_one(st2: str, ed2: str, rest: str) -> None:
+        nonlocal inferred_name
+        r = (rest or "").strip()
+        if not (st2 and ed2 and r):
+            return
+        nm, desc = _extract_metric_and_status_from_text(r)
         if inferred_name is None and nm:
             inferred_name = nm
-
         starts.append(st2)
         ends.append(ed2)
         names.append(nm)
-        descs.append(desc if desc else rest)
+        descs.append(desc if desc else r)
+
+    for seg in segments:
+        m = _PERIOD_TEXT_SUMMARY_SEG_RE.match(seg)
+        if m:
+            st = str(m.group("start") or "").strip()
+            ed = str(m.group("end") or "").strip() or st  # 单日期：结束日期=开始日期
+            rest = str(m.group("rest") or "").strip()
+            if not st or not rest:
+                continue
+
+            st2 = _normalize_date_cn(st)
+            m_y = re.fullmatch(r"(?P<y>\d{4})年\d{2}月\d{2}日", st2)
+            y_default: int | None = int(m_y.group("y")) if m_y else None
+            ed2 = _normalize_date_cn(ed, default_year=y_default)
+            last_range = (st2, ed2)
+
+            _append_one(st2, ed2, rest)
+            continue
+
+        # 兼容“逗号后段继承上一段日期范围”的写法，例如：
+        # - 4/1~4/22 睡眠得分中等，睡眠质量良好
+        # - 2024/1/1~2024/12/31锻炼时长偏低, 运动频率偏低
+        if last_range is not None:
+            st2, ed2 = last_range
+            _append_one(st2, ed2, seg)
 
     if not (starts or ends or names or descs):
         return UnparsedRawPersonalData(个人数据=raw, 原因="未能从该行中解析出任何(开始日期/结束日期/指标名称/状态描述)记录")
@@ -3589,6 +3604,21 @@ _STATS_ITEM_RE = re.compile(
     r"^\s*(?P<date>\d{4}/\d{1,2}/\d{1,2}|\d{1,2}/\d{1,2}|\d{1,2}月\d{1,2}日)\s*(?P<val>.+?)\s*$"
 )
 
+# 特化脏数据拦截：
+# - 形如：
+#   活动心率：[5月10日107-170, 平均145次/分钟, 5月11日76-118, 平均97次/分钟]，
+#   平均活动心率121次/分钟，最低活动心率76次/分钟，最高活动心率170次/分钟
+# - 该类数据虽“看起来”可归为 SingleMetricStatsRecord，但明细列表中混入“平均xx次/分钟”片段，
+#   会造成结构歧义与后续推断风险；这里按用户约定直接丢到 UnparsedRawPersonalData。
+_DIRTY_ACTIVITY_HEART_RATE_RANGE_AVG_RE = re.compile(
+    r"活动心率\s*[:：]\s*[\[【][^\]】]*"
+    r"(?:\d{1,2}月\d{1,2}日|\d{1,2}/\d{1,2})\s*\d+\s*-\s*\d+[^\]】]*"
+    # 明细列表内混入“平均xx(次/分钟)?”，单位可能缺失
+    r"平均\s*\d+(?:\s*(?:次\s*/\s*分钟|bpm|BPM))?[^\]】]*[\]】]"
+    # 末尾汇总必须包含“平均活动心率xx(次/分钟)?”，单位也可能缺失
+    r"[^\n]*平均\s*活动心率\s*\d+(?:\s*(?:次\s*/\s*分钟|bpm|BPM))?"
+)
+
 
 def _is_unitless_duration_metric(metric_name: str) -> bool:
     """
@@ -3641,6 +3671,10 @@ def _parse_stats_composite_line(
     raw = str(raw_line or "").strip()
     if not raw:
         return UnparsedRawPersonalData(个人数据=raw, 原因="空行，无法解析为单指标的明细汇总记录")
+
+    # 用户允许的特化规则：活动心率“数字范围 + 平均”脏数据直接进入 Unparsed。
+    if _DIRTY_ACTIVITY_HEART_RATE_RANGE_AVG_RE.search(raw):
+        return UnparsedRawPersonalData(个人数据=raw, 原因="活动心率(范围+平均)脏数据：按特化规则不解析")
 
     m_head = _STATS_COMP_HEAD_RE.match(raw)
     if not m_head:
