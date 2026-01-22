@@ -292,8 +292,8 @@ def run_validators(answer: str, data: Dict[str, Any]) -> List[Dict[str, Any]]:
     return pens
 
 # ===================== Prompts (JSON-only checks) =====================
-from prompts.score_prompt_v4 import GROUND_SYSTEM_PROMPT_TPL, GROUND_PROMPT_TPL
-from prompts.score_prompt_v4 import STRUCT_SYSTEM_PROMPT_TPL, STRUCT_PROMPT_TPL
+from prompts.score_prompt_v5 import GROUND_SYSTEM_PROMPT_TPL, GROUND_PROMPT_TPL
+from prompts.score_prompt_v5 import STRUCT_SYSTEM_PROMPT_TPL, STRUCT_PROMPT_TPL
 
 
 # ===================== LLM call =====================
@@ -1349,14 +1349,23 @@ def main():
         raw_path = Path(raw_data_value)
         if not raw_path.is_absolute():
             raw_path = Path(PROJECT_ROOT) / raw_data_value
-        run_name = raw_path.stem
-        processed_dir = Path(PROJECT_ROOT) / "data" / run_name / "processed"
-        # 若未显式指定 input_*，优先走 JSONL 模式，并使用推导出的 generated_responses.jsonl
-        if not args.input_csv and not args.input_jsonl:
-            args.input_jsonl = str(processed_dir / "generated_responses.jsonl")
-        # 若未显式指定 output_jsonl，则默认写到同一 processed 目录下
-        if not args.output_jsonl:
-            args.output_jsonl = str(processed_dir / "judge_results_kto.jsonl")
+        # 兼容：如果 --raw-data 直接给的是 .jsonl，则把它当作 input_jsonl 使用，
+        if raw_path.suffix.lower() == ".jsonl":
+            # 若未显式指定 input_*，优先走 JSONL 模式，并使用 raw_path 本身
+            if not args.input_csv and not args.input_jsonl:
+                args.input_jsonl = str(raw_path)
+            # 若未显式指定 output_jsonl，默认写到同目录 judge_results_kto.jsonl
+            if not args.output_jsonl:
+                args.output_jsonl = str(raw_path.with_name("judge_results_kto.jsonl"))
+        else:
+            run_name = raw_path.stem
+            processed_dir = Path(PROJECT_ROOT) / "data" / run_name / "processed"
+            # 若未显式指定 input_*，优先走 JSONL 模式，并使用推导出的 generated_responses.jsonl
+            if not args.input_csv and not args.input_jsonl:
+                args.input_jsonl = str(processed_dir / "generated_responses.jsonl")
+            # 若未显式指定 output_jsonl，则默认写到同一 processed 目录下
+            if not args.output_jsonl:
+                args.output_jsonl = str(processed_dir / "judge_results_kto.jsonl")
 
     if OpenAI is None:
         raise ImportError("openai package not found. pip install openai>=1.0")
@@ -1397,6 +1406,14 @@ def main():
 
         # Read JSONL samples（所有 repeat 共享同一批样本）
         samples = []
+        if not Path(input_file).exists():
+            raise FileNotFoundError(
+                f"[Error] Input JSONL not found: {input_file}\n"
+                f"你可以：\n"
+                f"- 直接用 --input_jsonl 指定 jsonl 路径；或\n"
+                f"- 用 --raw-data 指定原始文件（CSV 等）让脚本推导 processed/generated_responses.jsonl；或\n"
+                f"- 若 --raw-data 本身就是 .jsonl，本脚本会直接使用它作为输入。"
+            )
         with open(input_file, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()

@@ -163,7 +163,7 @@ def _time_jsons_to_text(time_jsons: list[dict[str, Any]]) -> str:
     for i, bucket in enumerate(time_jsons):
         t = bucket.get("time") or {}
         label = _safe(t.get("label")) or _safe(t.get("date")) or _safe(t.get("start")) or _safe(t.get("type"))
-        parts.append(f"[TimeBucket {i}] {label}".strip())
+        parts.append(f"{label}".strip())
 
         events = bucket.get("events") or []
         if isinstance(events, list) and events:
@@ -191,16 +191,15 @@ def _time_jsons_to_text(time_jsons: list[dict[str, Any]]) -> str:
 
         fallback = bucket.get("fallback")
         if fallback:
-            parts.append("[fallback]")
             if isinstance(fallback, list):
                 for fb in fallback[:20]:
                     parts.append(f"- {_safe(fb)}")
             else:
                 parts.append(f"- {_safe(fallback)}")
 
-        summary = bucket.get("summary")
-        if isinstance(summary, str) and summary.strip():
-            parts.append(f"[summary] {summary.strip()}")
+        # summary = bucket.get("summary")
+        # if isinstance(summary, str) and summary.strip():
+        #     parts.append(f"[summary] {summary.strip()}")
 
         parts.append("")
 
@@ -211,6 +210,7 @@ def check_aggregate_dataframes_by_llm(
     client: OpenAI,
     model_name: str,
     max_tokens_total: int,
+    return_rebuild_texts: bool = False,
 ) -> tuple[
     list[list[Any]],
     list[list[pd.DataFrame]],
@@ -281,6 +281,8 @@ def check_aggregate_dataframes_by_llm(
 
     check_dataframes: list[dict[str, Any]] = []
     check_wide_tables: list[dict[str, Any]] = []
+    rebuild_dataframes_texts: list[str] = []
+    rebuild_wide_tables_texts: list[str] = []
 
     for i, person_text in enumerate(person_datas):
         dfs = dataframes[i] if i < len(dataframes) else []
@@ -297,6 +299,8 @@ def check_aggregate_dataframes_by_llm(
         dfs_text = _dfs_to_text(dfs) if dfs else "（空）"
         wt_text = _df_to_text(wt) if wt is not None else "（空）"
         wt_text = wt_text.replace("不适用", " ")
+        rebuild_dataframes_texts.append(dfs_text)
+        rebuild_wide_tables_texts.append(wt_text)
 
         # if i not in [108, 47, 105, 25]:
         #     continue
@@ -305,45 +309,56 @@ def check_aggregate_dataframes_by_llm(
         #     print(("【聚合结果 dfs_text】\n" f"{dfs_text}\n"))
         #     print(("【聚合结果 wt_text】\n" f"{wt_text}\n"))
 
-        res_dfs = _call_llm_compare(
-            client=client,
-            model_name=model_name,
-            max_tokens_total=max_tokens_total,
-            person_text=person_text,
-            rebuild_text=dfs_text,
-            system_prompt=system_prompt,
+        if not return_rebuild_texts:
+            res_dfs = _call_llm_compare(
+                client=client,
+                model_name=model_name,
+                max_tokens_total=max_tokens_total,
+                person_text=person_text,
+                rebuild_text=dfs_text,
+                system_prompt=system_prompt,
+                )
+            check_dataframes.append(res_dfs)
+
+            res_wide_tables = _call_llm_compare(
+                client=client,
+                model_name=model_name,
+                max_tokens_total=max_tokens_total,
+                person_text=person_text,
+                rebuild_text=wt_text,
+                system_prompt=system_prompt,
             )
-        check_dataframes.append(res_dfs)
+            check_wide_tables.append(res_wide_tables)
+            if not res_dfs["same"] or not res_wide_tables["same"]:
+                print((
+                f"【原始个人数据文本 person_datas】【{i}】\n"
+                f"{person_text}\n"
+                ))
+                print(f"\033[92m分表 DataFrames（list[pd.DataFrame]） 存在信息遗漏: {res_dfs['missing_info']}\033[0m")
+                print((
+                "【聚合结果表格分表 DataFrames（list[pd.DataFrame]）】\n"
+                f"{dfs_text}\n"
+                ))
+                print(f"\033[92m宽表 WideTable（pd.DataFrame） 存在信息遗漏: {res_wide_tables['missing_info']}\033[0m")
+                print((
+                "【聚合结果表格 WideTable（pd.DataFrame）】\n"
+                f"{wt_text}\n"
+                ))
+                raise ValueError(f"【{i}】分表 DataFrames（list[pd.DataFrame]） 或 宽表 WideTable（pd.DataFrame） 存在信息遗漏")
+            else:
+                print(f"\033[92m【{i}】分表 DataFrames（list[pd.DataFrame]） 没有信息遗漏\033[0m")
+                print(f"\033[92m【{i}】宽表 WideTable（pd.DataFrame） 没有信息遗漏\033[0m")
 
-        res_wide_tables = _call_llm_compare(
-            client=client,
-            model_name=model_name,
-            max_tokens_total=max_tokens_total,
-            person_text=person_text,
-            rebuild_text=wt_text,
-            system_prompt=system_prompt,
+    if return_rebuild_texts:
+        return (
+            patterns_all,
+            dataframes,
+            wide_tables,
+            check_dataframes,
+            check_wide_tables,
+            rebuild_dataframes_texts,
+            rebuild_wide_tables_texts,
         )
-        check_wide_tables.append(res_wide_tables)
-        if not res_dfs["same"] or not res_wide_tables["same"]:
-            print((
-            f"【原始个人数据文本 person_datas】【{i}】\n"
-            f"{person_text}\n"
-            ))
-            print(f"\033[92m分表 DataFrames（list[pd.DataFrame]） 存在信息遗漏: {res_dfs['missing_info']}\033[0m")
-            print((
-            "【聚合结果表格分表 DataFrames（list[pd.DataFrame]）】\n"
-            f"{dfs_text}\n"
-            ))
-            print(f"\033[92m宽表 WideTable（pd.DataFrame） 存在信息遗漏: {res_wide_tables['missing_info']}\033[0m")
-            print((
-            "【聚合结果表格 WideTable（pd.DataFrame）】\n"
-            f"{wt_text}\n"
-            ))
-            raise ValueError(f"【{i}】分表 DataFrames（list[pd.DataFrame]） 或 宽表 WideTable（pd.DataFrame） 存在信息遗漏")
-        else:
-            print(f"\033[92m【{i}】分表 DataFrames（list[pd.DataFrame]） 没有信息遗漏\033[0m")
-            print(f"\033[92m【{i}】宽表 WideTable（pd.DataFrame） 没有信息遗漏\033[0m")
-
     return patterns_all, dataframes, wide_tables, check_dataframes, check_wide_tables
 
 def check_aggregate_markdown_tables_by_llm(
@@ -351,6 +366,7 @@ def check_aggregate_markdown_tables_by_llm(
     client: OpenAI,
     model_name: str,
     max_tokens_total: int,
+    return_rebuild_texts: bool = False,
 ) -> tuple[
     list[list[Any]],
     list[str],
@@ -397,6 +413,7 @@ def check_aggregate_markdown_tables_by_llm(
     check_markdown_tables: list[dict[str, Any]] = []
     for i, person_text in enumerate(person_datas):
         md_text = markdown_tables[i] if i < len(markdown_tables) else ""
+        md_text = md_text.replace("零散或无法聚合", "其他个人数据")
         if not md_text:
             md_text = ""
 
@@ -406,16 +423,19 @@ def check_aggregate_markdown_tables_by_llm(
         #     print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
         #     print(("【聚合结果 md_text】\n" f"{md_text}\n"))
 
-        res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=md_text, system_prompt=system_prompt)
-        check_markdown_tables.append(res)
-        if not res["same"]:
-            print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
-            print(f"\033[92mMarkdown 表格存在信息遗漏: {res['missing_info']}\033[0m")
-            print(("【聚合结果 Markdown 表格】\n" f"{md_text}\n"))
-            raise ValueError(f"【{i}】Markdown 表格存在信息遗漏")
-        else:
-            print(f"\033[92m【{i}】Markdown 表格没有信息遗漏\033[0m")
+        if not return_rebuild_texts:
+            res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=md_text, system_prompt=system_prompt)
+            check_markdown_tables.append(res)
+            if not res["same"]:
+                print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
+                print(f"\033[92mMarkdown 表格存在信息遗漏: {res['missing_info']}\033[0m")
+                print(("【聚合结果 Markdown 表格】\n" f"{md_text}\n"))
+                raise ValueError(f"【{i}】Markdown 表格存在信息遗漏")
+            else:
+                print(f"\033[92m【{i}】Markdown 表格没有信息遗漏\033[0m")
 
+    if return_rebuild_texts:
+        return patterns_all, markdown_tables, check_markdown_tables, markdown_tables
     return patterns_all, markdown_tables, check_markdown_tables
 
 
@@ -424,6 +444,7 @@ def check_aggregate_time_jsons_by_llm(
     client: OpenAI,
     model_name: str,
     max_tokens_total: int,
+    return_rebuild_texts: bool = False,
 ) -> tuple[
     list[list[Any]],
     list[list[dict[str, Any]]],
@@ -473,26 +494,30 @@ def check_aggregate_time_jsons_by_llm(
     )
 
     check_time_jsons: list[dict[str, Any]] = []
+    rebuild_time_texts: list[str] = []
     for i, person_text in enumerate(person_datas):
         tj = time_jsons[i] if i < len(time_jsons) else []
         rebuild_text = _time_jsons_to_text(tj)
+        rebuild_time_texts.append(rebuild_text)
 
         # if i not in [108, 47, 105, 25]:
         #     continue
         # if i in [108, 47, 105, 25]:
         #     print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
         #     print(("【聚合结果 rebuild_text】\n" f"{rebuild_text}\n"))
+        if not return_rebuild_texts:
+            res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=rebuild_text, system_prompt=system_prompt)
+            check_time_jsons.append(res)
+            if not res["same"]:
+                print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
+                print(f"\033[92mtime_jsons 存在信息遗漏: {res['missing_info']}\033[0m")
+                print(("【聚合结果 time_jsons（文本化）】\n" f"{rebuild_text}\n"))
+                raise ValueError(f"【{i}】time_jsons 存在信息遗漏")
+            else:
+                print(f"\033[92m【{i}】time_jsons 没有信息遗漏\033[0m")
 
-        res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=rebuild_text, system_prompt=system_prompt)
-        check_time_jsons.append(res)
-        if not res["same"]:
-            print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
-            print(f"\033[92mtime_jsons 存在信息遗漏: {res['missing_info']}\033[0m")
-            print(("【聚合结果 time_jsons（文本化）】\n" f"{rebuild_text}\n"))
-            raise ValueError(f"【{i}】time_jsons 存在信息遗漏")
-        else:
-            print(f"\033[92m【{i}】time_jsons 没有信息遗漏\033[0m")
-
+    if return_rebuild_texts:
+        return patterns_all, time_jsons, check_time_jsons, rebuild_time_texts
     return patterns_all, time_jsons, check_time_jsons
 
 
@@ -501,6 +526,7 @@ def check_aggregate_dataline_texts_by_llm(
     client: OpenAI,
     model_name: str,
     max_tokens_total: int,
+    return_rebuild_texts: bool = False,
 ) -> tuple[
     list[list[Any]],
     list[str],
@@ -544,6 +570,7 @@ def check_aggregate_dataline_texts_by_llm(
     check_dataline_texts: list[dict[str, Any]] = []
     for i, person_text in enumerate(person_datas):
         dl_text = dataline_texts[i] if i < len(dataline_texts) else ""
+        dl_text = dl_text.replace("数据类型：未定义，", "其他数据：")
         if not dl_text:
             dl_text = ""
         
@@ -552,23 +579,25 @@ def check_aggregate_dataline_texts_by_llm(
         # if i in [108, 47, 105, 25]:
         #     print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
         #     print(("【聚合结果 dataline_texts】\n" f"{dl_text}\n"))
-            
-        res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=dl_text, system_prompt=system_prompt)
-        check_dataline_texts.append(res)
-        if not res["same"]:
-            print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
-            print(f"\033[92mdataline_texts 存在信息遗漏: {res['missing_info']}\033[0m")
-            print(("【聚合结果 dataline_texts】\n" f"{dl_text}\n"))
-            raise ValueError(f"【{i}】dataline_texts 存在信息遗漏")
-        else:
-            print(f"\033[92m【{i}】dataline_texts 没有信息遗漏\033[0m")
+        if not return_rebuild_texts:
+            res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=dl_text, system_prompt=system_prompt)
+            check_dataline_texts.append(res)
+            if not res["same"]:
+                print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
+                print(f"\033[92mdataline_texts 存在信息遗漏: {res['missing_info']}\033[0m")
+                print(("【聚合结果 dataline_texts】\n" f"{dl_text}\n"))
+                raise ValueError(f"【{i}】dataline_texts 存在信息遗漏")
+            else:
+                print(f"\033[92m【{i}】dataline_texts 没有信息遗漏\033[0m")
 
+    if return_rebuild_texts:
+        return patterns_all, dataline_texts, check_dataline_texts, dataline_texts
     return patterns_all, dataline_texts, check_dataline_texts
 
 
 if __name__ == "__main__":
 
-    xlsx_path = "summary_eval_diff.xlsx"
+    xlsx_path = "summary_eval_diff_data.xlsx"
     sheet_name = 0
     data_col = "data"
 
@@ -609,8 +638,95 @@ if __name__ == "__main__":
     max_tokens_total = int(context_window * 0.85)
     client = OpenAI(api_key=api_key, base_url=base_url, http_client=DefaultHttpxClient(proxy="http://127.0.0.1:7890"))
 
-    check_aggregate_dataframes_by_llm(person_datas=person_datas, client=client, model_name=model_name, max_tokens_total=max_tokens_total)
-    check_aggregate_markdown_tables_by_llm(person_datas=person_datas, client=client, model_name=model_name, max_tokens_total=max_tokens_total)
-    check_aggregate_time_jsons_by_llm(person_datas=person_datas, client=client, model_name=model_name, max_tokens_total=max_tokens_total)
-    check_aggregate_dataline_texts_by_llm(person_datas=person_datas, client=client, model_name=model_name, max_tokens_total=max_tokens_total)
+    (
+        _patterns_all_df,
+        _dataframes,
+        _wide_tables,
+        _check_dataframes,
+        _check_wide_tables,
+        rebuild_dataframes_texts,
+        rebuild_wide_tables_texts,
+    ) = check_aggregate_dataframes_by_llm(
+        person_datas=person_datas,
+        client=client,
+        model_name=model_name,
+        max_tokens_total=max_tokens_total,
+        return_rebuild_texts=True,
+    )
+    (
+        _patterns_all_md,
+        markdown_tables,
+        _check_markdown_tables,
+        rebuild_markdown_texts,
+    ) = check_aggregate_markdown_tables_by_llm(
+        person_datas=person_datas,
+        client=client,
+        model_name=model_name,
+        max_tokens_total=max_tokens_total,
+        return_rebuild_texts=True,
+    )
+    (
+        _patterns_all_tj,
+        time_jsons,
+        _check_time_jsons,
+        rebuild_timejson_texts,
+    ) = check_aggregate_time_jsons_by_llm(
+        person_datas=person_datas,
+        client=client,
+        model_name=model_name,
+        max_tokens_total=max_tokens_total,
+        return_rebuild_texts=True,
+    )
+    (
+        _patterns_all_dl,
+        dataline_texts,
+        _check_dataline_texts,
+        rebuild_dataline_texts,
+    ) = check_aggregate_dataline_texts_by_llm(
+        person_datas=person_datas,
+        client=client,
+        model_name=model_name,
+        max_tokens_total=max_tokens_total,
+        return_rebuild_texts=True,
+    )
 
+    # 把重构文本写回“原始输入表”（df），对无效 data 的行保持为空
+    df_out = df.copy()
+    new_cols = [
+        "data_dataframes",
+        "data_widetable",
+        "data_markdown",
+        "data_timejson",
+        "data_dataline",
+    ]
+    for c in new_cols:
+        if c not in df_out.columns:
+            df_out[c] = None
+
+    # kept_indices 与 person_datas 一一对应
+    for j, orig_idx in enumerate(kept_indices):
+        if j < len(rebuild_dataframes_texts):
+            df_out.at[orig_idx, "data_dataframes"] = rebuild_dataframes_texts[j]
+        if j < len(rebuild_wide_tables_texts):
+            df_out.at[orig_idx, "data_widetable"] = rebuild_wide_tables_texts[j]
+        if j < len(rebuild_markdown_texts):
+            df_out.at[orig_idx, "data_markdown"] = rebuild_markdown_texts[j]
+        if j < len(rebuild_timejson_texts):
+            df_out.at[orig_idx, "data_timejson"] = rebuild_timejson_texts[j]
+        if j < len(rebuild_dataline_texts):
+            df_out.at[orig_idx, "data_dataline"] = rebuild_dataline_texts[j]
+
+    out_path = _xlsx_path.with_name(f"{_xlsx_path.stem}.llm_rebuild{_xlsx_path.suffix}")
+    df_out.to_excel(out_path, index=False)
+    print(f"\033[92m已保存带重构文本的新文件: {out_path}\033[0m")
+
+"""
+export file='summary_eval_diff_data' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate
+export file='summary_eval_diff_data_dataframes' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate &> $file.log
+export file='summary_eval_diff_data_widetable' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate &> $file.log
+export file='summary_eval_diff_data_markdown' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate &> $file.log
+export file='summary_eval_diff_data_timejson' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate &> $file.log
+export file='summary_eval_diff_data_dataline' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate &> $file.log
+
+
+"""

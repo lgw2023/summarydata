@@ -1431,7 +1431,8 @@ def aggregate_patterns_to_datalines(
             # 同类写在一行；条目之间用 "；" 分隔以减少歧义
             body = "；".join(items)
             if unconstructable_prefix_type:
-                lines.append(f"数据类型：{et}，{body}".strip())
+                # lines.append(f"数据类型：{et}，{body}".strip())
+                lines.append(f"{body}".strip())
             else:
                 lines.append(body.strip())
 
