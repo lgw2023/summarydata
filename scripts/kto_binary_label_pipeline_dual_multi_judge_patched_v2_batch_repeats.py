@@ -1329,6 +1329,17 @@ def main():
         default=0,
         help="只取前 N 行样本进行评估（0 表示使用全部数据）",
     )
+    parser.add_argument(
+        "--sample_id_device",
+        choices=["phone", "watch", "all"],
+        default="phone",
+        help=(
+            "按 sample_id 中包含的设备字符串筛选样本："
+            "phone=仅评估 sample_id 含 'phone'；"
+            "watch=仅评估 sample_id 含 'watch'；"
+            "all=不筛选。默认 phone。"
+        ),
+    )
 
     # label/weight
     parser.add_argument("--threshold", type=float, default=12.0)
@@ -1340,6 +1351,20 @@ def main():
     parser.add_argument("--allow_negative", action="store_true")
 
     args = parser.parse_args()
+
+    def _keep_by_sample_id_device(sample_id: Any) -> bool:
+        """
+        根据 args.sample_id_device 对 sample_id 做子串筛选。
+        - all: 不筛选
+        - phone/watch: sample_id 必须包含对应子串（大小写不敏感）
+        """
+        dev = getattr(args, "sample_id_device", "phone")
+        if dev == "all":
+            return True
+        sid = "" if sample_id is None else str(sample_id)
+        if not sid:
+            return False
+        return dev.lower() in sid.lower()
 
     # 若提供了 --raw-data，则根据其文件名自动推导 JSONL 输入/输出路径：
     #   <PROJECT_ROOT>/data/<raw_data_stem>/processed/generated_responses.jsonl
@@ -1426,7 +1451,16 @@ def main():
                     print(f"[Warn] Skipping invalid JSON line: {e}")
                     continue
 
-        # Optional: only keep first N samples for trial runs
+        # Optional: filter by sample_id device substring
+        before_filter = len(samples)
+        if getattr(args, "sample_id_device", "phone") != "all":
+            samples = [s for s in samples if _keep_by_sample_id_device(s.get("sample_id"))]
+            print(
+                f"[Info] sample_id_device={args.sample_id_device}: "
+                f"kept {len(samples)}/{before_filter} samples"
+            )
+
+        # Optional: only keep first N samples for trial runs (apply after filtering)
         if getattr(args, "head_n", 0) and args.head_n > 0:
             samples = samples[:args.head_n]
 
@@ -1874,6 +1908,21 @@ def main():
         raise ValueError("Excel input is not supported. Please use CSV input.")
     else:
         df = pd.read_csv(input_file)
+
+    # Optional: filter by sample_id device substring (CSV mode)
+    if getattr(args, "sample_id_device", "phone") != "all":
+        if "sample_id" in df.columns:
+            before = len(df)
+            df = df[df["sample_id"].apply(_keep_by_sample_id_device)]
+            print(
+                f"[Info] sample_id_device={args.sample_id_device}: "
+                f"kept {len(df)}/{before} rows by sample_id"
+            )
+        else:
+            print(
+                f"[Warn] sample_id_device={args.sample_id_device} is set, "
+                f"but CSV has no 'sample_id' column; skip filtering in CSV mode."
+            )
 
     # Optional: only keep first N rows for trial runs
     if getattr(args, "head_n", 0) and args.head_n > 0:

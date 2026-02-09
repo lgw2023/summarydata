@@ -9,6 +9,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data_clean import test_aggregate_format
+from src.data_clean.test_aggregate_format import (
+    _self_test_aggregate_patterns_to_formatted_text,
+    _self_test_recover_to_raw_data_roundtrip,
+    _self_test_route_raw_personal_data_to_dataclass,
+)
 from src.data_clean.test_aggregate_time import (
     _self_test_aggregate_patterns_to_time_json,
     _self_test_time_bucket_merge_effect,
@@ -21,6 +26,7 @@ from src.data_clean.test_aggregate_dataline import (
     _self_test_aggregate_patterns_to_dataline_text,
 )
 
+from src.data_clean._personal_data_class_test_data import test_DietRecord
 
 def test_aggregate_formatted_text():
     print("测试aggregate_formatted_text")
@@ -70,12 +76,12 @@ def test_aggregate_formatted_text():
         *list(test_SingleDateValueMultiSummaryRecord),
         *list(test_UnparsedRawPersonalData),
     ]
-    test_aggregate_format._self_test_aggregate_patterns_to_formatted_text(
+    _self_test_aggregate_patterns_to_formatted_text(
         _fixed_cases,
         max_cases=None,
         print_preview=True,
     )
-    test_aggregate_format._self_test_route_raw_personal_data_to_dataclass(
+    _self_test_route_raw_personal_data_to_dataclass(
         test_SingleMetricDetailRecord=test_SingleMetricDetailRecord,
         test_PeriodValueSingleSummaryRecord=test_PeriodValueSingleSummaryRecord,
         test_PeriodValuemMultiSummaryRecord=test_PeriodValuemMultiSummaryRecord,
@@ -89,7 +95,7 @@ def test_aggregate_formatted_text():
         test_SingleMetricStatsRecord=test_SingleMetricStatsRecord,
         test_UnparsedRawPersonalData=test_UnparsedRawPersonalData,
     )
-    test_aggregate_format._self_test_recover_to_raw_data_roundtrip(
+    _self_test_recover_to_raw_data_roundtrip(
         test_SingleMetricDetailRecord=test_SingleMetricDetailRecord,
         test_PeriodValueSingleSummaryRecord=test_PeriodValueSingleSummaryRecord,
         test_PeriodValuemMultiSummaryRecord=test_PeriodValuemMultiSummaryRecord,
@@ -104,7 +110,7 @@ def test_aggregate_formatted_text():
         test_UnparsedRawPersonalData=test_UnparsedRawPersonalData,
     )
 
-    test_aggregate_format._self_test_aggregate_patterns_to_formatted_text(
+    _self_test_aggregate_patterns_to_formatted_text(
         ["\n".join([
             "\n".join(test_samedate_SingleMetricDetailRecord),
             "\n".join(test_samedate_PeriodValueSingleSummaryRecord),
@@ -508,6 +514,10 @@ def main() -> None:
     test_aggregate_by_dataline()
 
 if __name__ == "__main__":
+    # 饮食类脏数据（YYYYMMDD + 餐次 + 摄入热量/食物/三大营养素）
+    # 该类数据会在 router 入口自动检测并重写为“单日期数值多项总结”句式，无需在测试脚本手动转换。
+    _self_test_aggregate_patterns_to_formatted_text(["\n".join(test_DietRecord)])
+    _self_test_aggregate_patterns_to_time_json(["\n".join(test_DietRecord)], max_cases=None, print_preview=True)
+    _self_test_aggregate_patterns_to_dataframes(["\n".join(test_DietRecord)], max_cases=None, print_preview=True)
+    _self_test_aggregate_patterns_to_dataline_text(["\n".join(test_DietRecord)], max_cases=None, print_preview=True)
     main()
-
-

@@ -42,10 +42,40 @@ from .models import (
     _find_bracket_span,
     _has_time_unit,
 )
+from .normalize import normalize_meal_nutrition_logs_to_single_date_value_multi_summary
 
 
 _SPLIT_RE = re.compile(r"[，,]\s*")
 _FIRST_NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
+
+# 特化脏数据拦截（router 入口级别）：
+# - 形如：
+#   20251224早餐：摄入热量是223.00千卡,食物为包子（三鲜馅）,脂肪8.60克,蛋白质7.40克,碳水化合物29.10克
+# - 特征：
+#   - 行首 8 位日期（YYYYMMDD）
+#   - 紧跟餐次（早餐/中餐/晚餐/加餐...） + 冒号
+#   - 句子中含“摄入热量”且通常带“千卡”
+# - 处理：
+#   - 先调用 normalize_meal_nutrition_logs_to_single_date_value_multi_summary 重写为“单日期数值多项总结”句式
+#   - 再按现有 router 逻辑继续解析/聚合
+_DIRTY_MEAL_NUTRITION_YYYYMMDD_RE = re.compile(
+    r"^\s*\d{8}\s*(?:早餐|中餐|午餐|晚餐|夜宵|上午加餐|下午加餐|晚上加餐|加餐)\s*[：:]\s*"
+)
+
+
+def _looks_like_dirty_meal_nutrition_yyyymmdd(s: str) -> bool:
+    t = str(s or "").strip()
+    if not t:
+        return False
+    if not _DIRTY_MEAL_NUTRITION_YYYYMMDD_RE.match(t):
+        return False
+    # 必须包含“摄入热量”，且通常会带“千卡/kcal”
+    if "摄入热量" not in t:
+        return False
+    if ("千卡" not in t) and ("kcal" not in t) and ("KCAL" not in t):
+        # 仍允许极少数只写“摄入热量是223”但没写单位的情况
+        return True
+    return True
 
 # 特化脏数据拦截（router 入口级别）：
 # - 形如：
@@ -376,6 +406,17 @@ def route_raw_personal_data_to_dataclass(
     raw = str(raw_line or "").strip()
     if not raw:
         return [UnparsedRawPersonalData(个人数据=raw, 原因="空行，router 无法判定数据类型")]
+
+    # 特化：饮食(摄入热量/三大营养素)脏数据（YYYYMMDD + 餐次...）
+    # 在任何类型判别之前先重写为“单日期数值多项总结”可解析句式，避免被 NoDateValueSummaryRecord 误吸。
+    if _looks_like_dirty_meal_nutrition_yyyymmdd(raw):
+        try:
+            rewritten = normalize_meal_nutrition_logs_to_single_date_value_multi_summary(raw)
+        except Exception:
+            rewritten = raw
+        rewritten = str(rewritten or "").strip()
+        if rewritten and rewritten != raw:
+            raw = rewritten
 
     # 用户允许的特化规则：活动心率“数字范围 + 平均”脏数据直接进入 Unparsed（避免被其它解析器误判）。
     if _DIRTY_ACTIVITY_HEART_RATE_RANGE_AVG_RE.search(raw):

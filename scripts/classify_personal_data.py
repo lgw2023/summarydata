@@ -275,7 +275,8 @@ def aggregate(
 
 if __name__ == "__main__":
 
-    xlsx_path = "summary_eval_diff.xlsx"
+    # xlsx_path = "summary_eval_diff.xlsx"
+    xlsx_path = "sport_health_log2data_agent_result.with_last_answer_personal.xlsx"
     sheet_name = 0
     data_col = "data"
 

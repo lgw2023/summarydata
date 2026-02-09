@@ -210,7 +210,7 @@ def check_aggregate_dataframes_by_llm(
     client: OpenAI,
     model_name: str,
     max_tokens_total: int,
-    return_rebuild_texts: bool = False,
+    skip_llm_check: bool = False,
 ) -> tuple[
     list[list[Any]],
     list[list[pd.DataFrame]],
@@ -309,7 +309,7 @@ def check_aggregate_dataframes_by_llm(
         #     print(("【聚合结果 dfs_text】\n" f"{dfs_text}\n"))
         #     print(("【聚合结果 wt_text】\n" f"{wt_text}\n"))
 
-        if not return_rebuild_texts:
+        if not skip_llm_check:
             res_dfs = _call_llm_compare(
                 client=client,
                 model_name=model_name,
@@ -349,7 +349,7 @@ def check_aggregate_dataframes_by_llm(
                 print(f"\033[92m【{i}】分表 DataFrames（list[pd.DataFrame]） 没有信息遗漏\033[0m")
                 print(f"\033[92m【{i}】宽表 WideTable（pd.DataFrame） 没有信息遗漏\033[0m")
 
-    if return_rebuild_texts:
+    if skip_llm_check:
         return (
             patterns_all,
             dataframes,
@@ -366,7 +366,7 @@ def check_aggregate_markdown_tables_by_llm(
     client: OpenAI,
     model_name: str,
     max_tokens_total: int,
-    return_rebuild_texts: bool = False,
+    skip_llm_check: bool = False,
 ) -> tuple[
     list[list[Any]],
     list[str],
@@ -423,7 +423,7 @@ def check_aggregate_markdown_tables_by_llm(
         #     print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
         #     print(("【聚合结果 md_text】\n" f"{md_text}\n"))
 
-        if not return_rebuild_texts:
+        if not skip_llm_check:
             res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=md_text, system_prompt=system_prompt)
             check_markdown_tables.append(res)
             if not res["same"]:
@@ -434,7 +434,7 @@ def check_aggregate_markdown_tables_by_llm(
             else:
                 print(f"\033[92m【{i}】Markdown 表格没有信息遗漏\033[0m")
 
-    if return_rebuild_texts:
+    if skip_llm_check:
         return patterns_all, markdown_tables, check_markdown_tables, markdown_tables
     return patterns_all, markdown_tables, check_markdown_tables
 
@@ -444,7 +444,7 @@ def check_aggregate_time_jsons_by_llm(
     client: OpenAI,
     model_name: str,
     max_tokens_total: int,
-    return_rebuild_texts: bool = False,
+    skip_llm_check: bool = False,
 ) -> tuple[
     list[list[Any]],
     list[list[dict[str, Any]]],
@@ -505,7 +505,7 @@ def check_aggregate_time_jsons_by_llm(
         # if i in [108, 47, 105, 25]:
         #     print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
         #     print(("【聚合结果 rebuild_text】\n" f"{rebuild_text}\n"))
-        if not return_rebuild_texts:
+        if not skip_llm_check:
             res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=rebuild_text, system_prompt=system_prompt)
             check_time_jsons.append(res)
             if not res["same"]:
@@ -516,7 +516,7 @@ def check_aggregate_time_jsons_by_llm(
             else:
                 print(f"\033[92m【{i}】time_jsons 没有信息遗漏\033[0m")
 
-    if return_rebuild_texts:
+    if skip_llm_check:
         return patterns_all, time_jsons, check_time_jsons, rebuild_time_texts
     return patterns_all, time_jsons, check_time_jsons
 
@@ -526,7 +526,7 @@ def check_aggregate_dataline_texts_by_llm(
     client: OpenAI,
     model_name: str,
     max_tokens_total: int,
-    return_rebuild_texts: bool = False,
+    skip_llm_check: bool = False,
 ) -> tuple[
     list[list[Any]],
     list[str],
@@ -579,7 +579,7 @@ def check_aggregate_dataline_texts_by_llm(
         # if i in [108, 47, 105, 25]:
         #     print((f"【原始个人数据文本 person_datas】【{i}】\n{person_text}\n"))
         #     print(("【聚合结果 dataline_texts】\n" f"{dl_text}\n"))
-        if not return_rebuild_texts:
+        if not skip_llm_check:
             res = _call_llm_compare(client=client, model_name=model_name, max_tokens_total=max_tokens_total, person_text=person_text, rebuild_text=dl_text, system_prompt=system_prompt)
             check_dataline_texts.append(res)
             if not res["same"]:
@@ -590,14 +590,15 @@ def check_aggregate_dataline_texts_by_llm(
             else:
                 print(f"\033[92m【{i}】dataline_texts 没有信息遗漏\033[0m")
 
-    if return_rebuild_texts:
+    if skip_llm_check:
         return patterns_all, dataline_texts, check_dataline_texts, dataline_texts
     return patterns_all, dataline_texts, check_dataline_texts
 
 
 if __name__ == "__main__":
 
-    xlsx_path = "summary_eval_diff_data.xlsx"
+    # xlsx_path = "summary_eval_diff_data.xlsx"
+    xlsx_path = "sport_health_log2data_agent_result.with_last_answer_personal.xlsx"
     sheet_name = 0
     data_col = "data"
 
@@ -636,6 +637,8 @@ if __name__ == "__main__":
     api_key = (os.environ.get("LLM_MODEL_JUDGE_API_KEY") or "").strip()
     context_window = int(os.environ.get("LLM_MODEL_CONTEXT_WINDOW") or 400000)
     max_tokens_total = int(context_window * 0.85)
+    api_key = ""
+    base_url = ""
     client = OpenAI(api_key=api_key, base_url=base_url, http_client=DefaultHttpxClient(proxy="http://127.0.0.1:7890"))
 
     (
@@ -651,7 +654,7 @@ if __name__ == "__main__":
         client=client,
         model_name=model_name,
         max_tokens_total=max_tokens_total,
-        return_rebuild_texts=True,
+        skip_llm_check=True,
     )
     (
         _patterns_all_md,
@@ -663,7 +666,7 @@ if __name__ == "__main__":
         client=client,
         model_name=model_name,
         max_tokens_total=max_tokens_total,
-        return_rebuild_texts=True,
+        skip_llm_check=True,
     )
     (
         _patterns_all_tj,
@@ -675,7 +678,7 @@ if __name__ == "__main__":
         client=client,
         model_name=model_name,
         max_tokens_total=max_tokens_total,
-        return_rebuild_texts=True,
+        skip_llm_check=True,
     )
     (
         _patterns_all_dl,
@@ -687,7 +690,7 @@ if __name__ == "__main__":
         client=client,
         model_name=model_name,
         max_tokens_total=max_tokens_total,
-        return_rebuild_texts=True,
+        skip_llm_check=True,
     )
 
     # 把重构文本写回“原始输入表”（df），对无效 data 的行保持为空
@@ -728,5 +731,10 @@ export file='summary_eval_diff_data_markdown' && python scripts/run_pipeline.py 
 export file='summary_eval_diff_data_timejson' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate &> $file.log
 export file='summary_eval_diff_data_dataline' && python scripts/run_pipeline.py --config configs/$file.yaml --raw-data $file.xlsx --stage generate &> $file.log
 
-
+export file='summary_eval_diff_data' && python scripts/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py --workers 2 --inner_workers 12 --num_repeat 3 --raw-data $file.xlsx
+export file='summary_eval_diff_data_dataframes' && python scripts/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py --workers 2 --inner_workers 12 --num_repeat 3 --raw-data $file.xlsx
+export file='summary_eval_diff_data_widetable' && python scripts/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py --workers 2 --inner_workers 12 --num_repeat 3 --raw-data $file.xlsx
+export file='summary_eval_diff_data_markdown' && python scripts/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py --workers 2 --inner_workers 12 --num_repeat 3 --raw-data $file.xlsx
+export file='summary_eval_diff_data_timejson' && python scripts/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py --workers 2 --inner_workers 12 --num_repeat 3 --raw-data $file.xlsx
+export file='summary_eval_diff_data_dataline' && python scripts/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py --workers 2 --inner_workers 12 --num_repeat 3 --raw-data $file.xlsx
 """

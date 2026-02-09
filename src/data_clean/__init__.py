@@ -10,6 +10,7 @@ data_clean：个人数据样式解析/归一化/聚合渲染。
 
 from .models import *  # noqa: F403
 from .parse import *  # noqa: F403
+from .normalize import *  # noqa: F403
 from .aggregate_format import *  # noqa: F403
 from .aggregate_time import *  # noqa: F403
 from .aggregate_dataframe import *  # noqa: F403
@@ -18,6 +19,7 @@ from .aggregate_dataline import *  # noqa: F403
 # 兼容旧版：沿用原脚本的导出列表（在拆分后由本包统一汇总）
 from .models import __all__ as _MODELS_ALL
 from .parse import __all__ as _PARSE_ALL
+from .normalize import __all__ as _NORMALIZE_ALL
 from .aggregate_format import __all__ as _AGG_FORMAT_ALL
 from .aggregate_time import __all__ as _AGG_TIME_ALL
 from .aggregate_dataframe import __all__ as _AGG_DF_ALL
@@ -28,6 +30,7 @@ __all__ = list(
         [
             *_MODELS_ALL,
             *_PARSE_ALL,
+            *_NORMALIZE_ALL,
             *_AGG_FORMAT_ALL,
             *_AGG_TIME_ALL,
             *_AGG_DF_ALL,

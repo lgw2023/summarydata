@@ -311,6 +311,218 @@ def _format_date_range(st: str, ed: str) -> str:
         return e
     return f"{s}~{e}"
 
+
+# ========= 特化预处理：饮食(摄入热量/三大营养素)日志 -> 单日期数值多项总结 =========
+_MEAL_NUTRITION_LINE_RE = re.compile(
+    r"^\s*(?P<date8>\d{8})\s*(?P<meal>[^：:\n\r]{1,20})\s*[：:]\s*(?P<body>.+?)\s*$"
+)
+
+
+def _yyyymmdd_to_ymd_slash(date8: str) -> str:
+    """
+    将 YYYYMMDD 转为 YYYY/M/D（用于喂给 `_normalize_date_cn` 支持的分隔符日期格式）。
+    解析失败则原样返回。
+    """
+    t = str(date8 or "").strip()
+    m = re.fullmatch(r"(?P<y>\d{4})(?P<m>\d{2})(?P<d>\d{2})", t)
+    if not m:
+        return t
+    try:
+        y = int(m.group("y"))
+        mo = int(m.group("m"))
+        da = int(m.group("d"))
+    except Exception:
+        return t
+    if not (1 <= mo <= 12 and 1 <= da <= 31):
+        return t
+    return f"{y}/{mo}/{da}"
+
+
+def normalize_meal_nutrition_logs_to_single_date_value_multi_summary(text: str) -> str:
+    """
+    将“YYYYMMDD + 餐次 + 摄入热量/食物/脂肪/蛋白质/碳水化合物 ...”的日志文本，
+    重写为当前解析器可识别的“单日期数值多项总结”句式，以便被：
+    - aggregate_dataframe
+    - aggregate_dataline
+    - aggregate_time
+    - aggregate_format
+    等模块解析与聚合。
+
+    输入示例（原始）：
+      20251224早餐：摄入热量是223.00千卡,食物为包子（三鲜馅）,脂肪8.60克,蛋白质7.40克,碳水化合物29.10克
+
+    输出示例（重写后）：
+      2025/12/24 早餐包子（三鲜馅）摄入热量223.00千卡, 早餐包子（三鲜馅）脂肪8.60克, 早餐包子（三鲜馅）蛋白质7.40克, 早餐包子（三鲜馅）碳水化合物29.10克
+
+    说明：
+    - 本函数只做“文本层重写”，不直接构造数据类对象；
+    - 重写后的文本可直接传给 `explode_newlines_and_route_to_dataclasses` / `get_patterns_all`。
+    """
+    raw = "" if text is None else str(text)
+    if not raw.strip():
+        return ""
+
+    # 拆行：兼容复制粘贴的多行文本
+    lines = [ln.strip() for ln in raw.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    out_lines: list[str] = []
+
+    # 常见分隔：英文逗号/中文逗号
+    split_re = re.compile(r"[，,]\s*")
+
+    calories_re = re.compile(
+        r"(?:^|.*?)(?P<name>摄入热量)\s*(?:是|为|:|：)?\s*(?P<val>[-+]?\d+(?:\.\d+)?)\s*(?P<unit>千卡|大卡|kcal|KCAL|cal|CAL)?\s*$"
+    )
+    food_re = re.compile(r"(?:^|.*?)(?:食物|食物名称)\s*(?:为|是|:|：)?\s*(?P<food>.*)\s*$")
+    # 通用“指标+数值+单位”片段（偏保守，避免误伤）
+    metric_value_re = re.compile(
+        r"^\s*(?P<metric>脂肪|蛋白质|碳水化合物|碳水|糖|膳食纤维|钠|胆固醇)\s*(?:为|是|:|：)?\s*(?P<val>[-+]?\d+(?:\.\d+)?)\s*(?P<unit>克|g|毫克|mg)\s*$"
+    )
+
+    def _norm_unit(u: str) -> str:
+        uu = (u or "").strip()
+        if not uu:
+            return ""
+        if uu in ("大卡", "kcal", "KCAL"):
+            return "千卡"
+        if uu in ("cal", "CAL"):
+            # 极少见：cal 更像 “卡路里”；这里仍折算到“千卡”展示更贴近现有体系，但不做数值换算（避免误改）
+            return "千卡"
+        if uu in ("g",):
+            return "克"
+        if uu in ("mg",):
+            return "毫克"
+        return uu
+
+    def _sanitize_food_name(food0: str) -> str:
+        """
+        食物名清洗（非常保守）：
+        - 避免食物名里带“330ml/500毫升/1L”等数字，导致后续“指标名+数值”解析把它误当成数值。
+        - 仅剥离**末尾**的容量/重量/份数标注（如 65g / 55g*12枚 / 100ml*5 / 330ml 等）。
+        - 其余位置的阿拉伯数字（如 “火锅(荤1素4)”）会被替换为中文数字（避免被当作“第一个数值”误切分）。
+        """
+        t = (food0 or "").strip()
+        if not t:
+            return t
+        # 1) 剥离末尾容量/重量与“*份数”：
+        # - 65g
+        # - 55g*12枚
+        # - 100ml*5
+        # - 330ml / 1L / 1升 / 500毫升
+        #
+        # 注意：只剥离末尾，避免误伤 “B12/7喜” 这类在中间的品牌/型号信息。
+        t2 = re.sub(
+            r"\s*"
+            r"\d+(?:\.\d+)?\s*"
+            r"(?:ml|mL|ML|毫升|l|L|升|g|G|克|kg|KG|千克)"
+            r"\s*"
+            r"(?:\*\s*\d+\s*(?:枚|袋|包|盒|瓶|罐|片|支|个)?)?"
+            r"\s*$",
+            "",
+            t,
+        ).strip()
+        if t2:
+            t = t2
+
+        # 2) 将剩余的阿拉伯数字替换为中文数字（逐位替换，简单稳定）
+        digit_map = {
+            "0": "零",
+            "1": "一",
+            "2": "二",
+            "3": "三",
+            "4": "四",
+            "5": "五",
+            "6": "六",
+            "7": "七",
+            "8": "八",
+            "9": "九",
+        }
+        t3 = "".join(digit_map.get(ch, ch) for ch in t)
+        return t3.strip() or t
+
+    for ln in lines:
+        if not ln:
+            continue
+        m = _MEAL_NUTRITION_LINE_RE.match(ln)
+        if not m:
+            # 无法识别：原样保留，避免丢信息（后续仍可由 router 其它分支/兜底处理）
+            out_lines.append(ln)
+            continue
+
+        date8 = (m.group("date8") or "").strip()
+        meal = (m.group("meal") or "").strip()
+        body = (m.group("body") or "").strip()
+        if not (date8 and meal and body):
+            out_lines.append(ln)
+            continue
+
+        ymd = _yyyymmdd_to_ymd_slash(date8)
+
+        # 解析 body 片段
+        segs = [x.strip() for x in split_re.split(body) if x and x.strip()]
+        food = ""
+        calories_val = ""
+        calories_unit = ""
+        metrics: list[tuple[str, str, str]] = []  # (metric, val, unit)
+
+        for seg in segs:
+            if not seg:
+                continue
+            # 食物
+            m_food = food_re.fullmatch(seg)
+            if m_food and (food == ""):
+                food = _sanitize_food_name((m_food.group("food") or "").strip())
+                continue
+
+            # 摄入热量
+            m_cal = calories_re.fullmatch(seg)
+            if m_cal and (calories_val == ""):
+                calories_val = (m_cal.group("val") or "").strip()
+                calories_unit = _norm_unit(m_cal.group("unit") or "千卡") or "千卡"
+                continue
+
+            # 其它营养素
+            m_mv = metric_value_re.fullmatch(seg)
+            if m_mv:
+                metric = (m_mv.group("metric") or "").strip()
+                val = (m_mv.group("val") or "").strip()
+                unit = _norm_unit(m_mv.group("unit") or "")
+                if metric and val:
+                    metrics.append((metric, val, unit or "无"))
+                continue
+
+        # 构造“指标前缀”：餐次 + 食物名（若食物为空，则只用餐次）
+        prefix = meal
+        if food:
+            prefix = f"{meal}{food}"
+
+        rewritten: list[str] = []
+        if calories_val:
+            rewritten.append(f"{prefix}摄入热量{calories_val}{calories_unit}")
+        for metric, val, unit in metrics:
+            # 统一 grams 等单位在 value 中保留，便于下游推断单位
+            if unit == "无":
+                rewritten.append(f"{prefix}{metric}{val}")
+            else:
+                rewritten.append(f"{prefix}{metric}{val}{unit}")
+
+        # 若没解析出任何指标，保留原行
+        if not rewritten:
+            out_lines.append(ln)
+            continue
+
+        # Router 提示：
+        # - 解析路由在 “单日期数值多项总结” 的强特征判断里，会要求出现“平均/最高/最低...”等词（更像统计汇总）。
+        # - 这类饮食日志本质上属于“同一日期的多指标汇总”，但天然不含这些统计词，容易被归到“单日期数值单项总结”。
+        # - 这里追加一个**不会被解析为指标**的占位片段（无数字，因此不会生成记录），仅用于触发 router 更合适的分支。
+        #   注意：占位片段不会出现在表格 rows 中，只会保留在原始文本 recover 中。
+        rewritten.append("（平均）")
+
+        # 目标句式：{date}{space}{seg1}, {seg2}, ...
+        out_lines.append(f"{ymd} " + "，".join(rewritten))
+
+    return "\n".join(out_lines).strip()
+
+
 __all__ = [
     "_strip_leading_de",
     "_normalize_time_cn_token",
@@ -322,4 +534,5 @@ __all__ = [
     "_normalize_date_cn",
     "_normalize_date_or_range_cn",
     "_format_date_range",
+    "normalize_meal_nutrition_logs_to_single_date_value_multi_summary",
 ]
