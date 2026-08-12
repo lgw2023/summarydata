@@ -1,0 +1,49 @@
+experiment:
+  source_path: /tmp/summarydata-viz-4341810.a57DOn/summary_train_v3.csv
+  expected_source_sha256: b4c70205099f1a9e54f433830c8e006479290caa645adfc591f63a5f5779293a
+  snapshot_commit: 4341810acabfd4165160ef538f22f4c3c9fff14f
+  snapshot_repo: /Volumes/SSD1/summarydata
+  source_git_path: summary_train_v3.csv
+  legacy_response_prompt_git_path: response_prompt_v2.py
+  legacy_scorer_git_path: src/scoring/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py
+  legacy_response_prompt: /tmp/summarydata-viz-4341810.a57DOn/response_prompt_v2.py
+  legacy_scorer: /tmp/summarydata-viz-4341810.a57DOn/src/scoring/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py
+
+  generation:
+    base_url: http://127.0.0.1:18001/v1
+    model: opencode-go/qwen3.7-plus
+    concurrency: 1
+
+  judge:
+    base_url: http://127.0.0.1:8000/v1
+    model: gpt-5.6-luna
+    reasoning_effort: low
+    concurrency: 1
+
+  canary_indices: [0, 1, 2]
+  compare_count: 12
+  judge_repeats: 1
+  pass_threshold_strictly_greater_than: 14
+  request_caps:
+    qwen: 3
+    luna: 4
+  max_attempts_per_operation: 3
+  stop_after_consecutive_failures: 3
+
+  trace:
+    pipeline_epoch: trace-evidence-renderer-v4-1-smoke-20260811-v1
+    phase1_count: 1
+    # Also protect the two v4 roots that received successful dual-v2 Qwen calls.
+    excluded_indices:
+      [0, 1, 2, 86, 134, 327, 269, 423, 22, 200, 397, 122,
+       324, 320, 377, 360, 143, 337, 28, 74, 374, 426, 408, 245, 24,
+       330, 229, 159, 414, 149, 144, 120, 182, 169, 273, 49, 262, 235,
+       152, 390, 326, 105, 94, 41, 342, 67, 166, 206, 267, 146, 88,
+       263, 178, 313, 255, 147, 239, 285, 161, 90, 81, 236,
+       216, 309, 317, 351, 195, 38, 59, 242, 349, 63, 154,
+       249, 207, 312, 199, 361, 111, 73, 373, 291, 399,
+       127, 75, 99, 331, 220, 108]
+    checkpoints: [1]
+    validation_root_count: 100
+    audit_root_count: 100
+    critical_dimension_floor: 15

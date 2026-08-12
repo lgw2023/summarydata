@@ -1,0 +1,44 @@
+experiment:
+  source_path: /Volumes/SSD1/summarydata/summary_train_v36.xlsx
+  expected_source_sha256: 96a6de860ad0a87d7162a17b24cf8a008f93a47f0bacc9ed3976e7f1e3b6d412
+  snapshot_commit: 4341810acabfd4165160ef538f22f4c3c9fff14f
+  snapshot_repo: /Volumes/SSD1/summarydata
+  source_git_path: ''
+  legacy_response_prompt_git_path: response_prompt_v2.py
+  legacy_scorer_git_path: src/scoring/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py
+  legacy_response_prompt: /tmp/summarydata-viz-4341810.a57DOn/response_prompt_v2.py
+  legacy_scorer: /tmp/summarydata-viz-4341810.a57DOn/src/scoring/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py
+  generation:
+    base_url: http://127.0.0.1:18001/v1
+    model: opencode-go/qwen3.8-max
+    concurrency: 1
+  judge:
+    base_url: http://127.0.0.1:18002/v1
+    base_urls: [http://127.0.0.1:18002/v1, http://127.0.0.1:18004/v1]
+    model: gpt-5.6-luna
+    reasoning_effort: low
+    concurrency: 1
+    initial_request_delay_seconds: 240
+    min_request_interval_seconds: 240
+  canary_indices: [0, 1, 2, 3, 4]
+  compare_count: 12
+  judge_repeats: 1
+  pass_threshold_strictly_greater_than: 14
+  acceptance:
+    positive_min_score_inclusive: 14
+    negative_min_score_exclusive: 0
+    negative_max_score_inclusive: 8
+  request_caps: {qwen: 5, luna: 10}
+  max_attempts_per_operation: 1
+  stop_after_consecutive_failures: 3
+  trace:
+    pipeline_epoch: trace-visual-budget-negative-v26-v36-qwen38max-20260812-v1
+    phase1_count: 5
+    excluded_indices_file: summary_train_v36_consumed_indices_20260812.json
+    additional_excluded_indices: [2, 5, 6, 14, 22, 24, 25, 28, 29, 30, 34, 105, 118, 129, 185, 201, 255, 262, 281, 298, 378, 420, 479]
+    validation_excluded_indices: []
+    split_protected_indices_file: summary_train_v36_consumed_indices_20260812.json
+    checkpoints: [5]
+    validation_root_count: 70
+    audit_root_count: 100
+    critical_dimension_floor: 15

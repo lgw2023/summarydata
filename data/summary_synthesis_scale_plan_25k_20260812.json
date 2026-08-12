@@ -1,0 +1,65 @@
+{
+  "schema_version": "summary-synthesis-scale-plan-v1",
+  "primary_goal_interpretation": "25k sampling-model API requests produce 25k candidate records",
+  "primary_budget": {
+    "sampling_requests": 25000,
+    "maximum_judge_requests": 50000,
+    "target_acceptance_rate_at_least": 0.8,
+    "minimum_accepted_outputs": 20000
+  },
+  "serial_teacher_capacity": {
+    "request_start_interval_seconds": 240.0,
+    "conservative_elapsed_days": 138.88888888888889,
+    "assumption": "one shared teacher-capacity lane; two judge calls for every successful sampling response; no retries"
+  },
+  "deadline_capacity_targets": [
+    {
+      "deadline_days": 30.0,
+      "required_independent_teacher_lanes": 5,
+      "required_global_teacher_start_interval_seconds": 51.84,
+      "required_judge_requests_per_day": 1666.6666666666667
+    },
+    {
+      "deadline_days": 14.0,
+      "required_independent_teacher_lanes": 10,
+      "required_global_teacher_start_interval_seconds": 24.192,
+      "required_judge_requests_per_day": 3571.4285714285716
+    },
+    {
+      "deadline_days": 7.0,
+      "required_independent_teacher_lanes": 20,
+      "required_global_teacher_start_interval_seconds": 12.096,
+      "required_judge_requests_per_day": 7142.857142857143
+    }
+  ],
+  "alternate_goal_if_25k_means_accepted_outputs": {
+    "target_accepted_outputs": 25000,
+    "minimum_sampling_requests_at_target_rate": 31250,
+    "maximum_judge_requests": 62500,
+    "conservative_elapsed_days": 173.61111111111111
+  },
+  "validation_gates": [
+    {
+      "sampling_requests": 5,
+      "point_rate_minimum_accepted": 4,
+      "one_sided_exact_95_lower_bound_minimum_accepted": null,
+      "maximum_judge_requests": 10,
+      "serial_teacher_hours": 0.6666666666666666
+    },
+    {
+      "sampling_requests": 50,
+      "point_rate_minimum_accepted": 40,
+      "one_sided_exact_95_lower_bound_minimum_accepted": 45,
+      "maximum_judge_requests": 100,
+      "serial_teacher_hours": 6.666666666666667
+    },
+    {
+      "sampling_requests": 100,
+      "point_rate_minimum_accepted": 80,
+      "one_sided_exact_95_lower_bound_minimum_accepted": 87,
+      "maximum_judge_requests": 200,
+      "serial_teacher_hours": 13.333333333333334
+    }
+  ],
+  "claim_boundary": "Capacity arithmetic is deterministic. Acceptance yield remains an empirical quantity and must be reported from immutable request ledgers."
+}

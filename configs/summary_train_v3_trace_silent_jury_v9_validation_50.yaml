@@ -1,0 +1,45 @@
+experiment:
+  source_path: /tmp/summarydata-viz-4341810.a57DOn/summary_train_v3.csv
+  expected_source_sha256: b4c70205099f1a9e54f433830c8e006479290caa645adfc591f63a5f5779293a
+  snapshot_commit: 4341810acabfd4165160ef538f22f4c3c9fff14f
+  snapshot_repo: /Volumes/SSD1/summarydata
+  source_git_path: summary_train_v3.csv
+  legacy_response_prompt_git_path: response_prompt_v2.py
+  legacy_scorer_git_path: src/scoring/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py
+  legacy_response_prompt: /tmp/summarydata-viz-4341810.a57DOn/response_prompt_v2.py
+  legacy_scorer: /tmp/summarydata-viz-4341810.a57DOn/src/scoring/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py
+  generation:
+    base_url: http://127.0.0.1:18001/v1
+    model: opencode-go/qwen3.7-plus
+    concurrency: 1
+  judge:
+    base_url: http://127.0.0.1:8000/v1
+    model: gpt-5.6-luna
+    reasoning_effort: low
+    concurrency: 1
+  canary_indices: [0, 1, 2]
+  compare_count: 12
+  judge_repeats: 1
+  pass_threshold_strictly_greater_than: 14
+  request_caps: {qwen: 50, luna: 100}
+  max_attempts_per_operation: 1
+  stop_after_consecutive_failures: 50
+  trace:
+    pipeline_epoch: trace-silent-jury-v9-validation-20260811-v1
+    phase1_count: 50
+    excluded_indices:
+      [0, 1, 2, 4, 6, 12, 14, 21, 22, 23, 24, 28, 30, 35, 36, 38, 40,
+       41, 46, 49, 50, 51, 53, 59, 63, 64, 67, 73, 74, 75, 81, 86, 88,
+       90, 92, 94, 99, 100, 105, 108, 111, 113, 116, 120, 122, 125, 127,
+       134, 135, 136, 143, 144, 146, 147, 149, 152, 154, 159, 161, 165,
+       166, 169, 171, 178, 180, 182, 187, 195, 197, 199, 200, 203, 206,
+       207, 212, 213, 216, 219, 220, 229, 235, 236, 239, 242, 245, 246,
+       248, 249, 252, 255, 262, 263, 264, 266, 267, 268, 269, 273, 281,
+       285, 286, 288, 291, 294, 296, 303, 304, 307, 309, 311, 312, 313,
+       317, 320, 324, 325, 326, 327, 330, 331, 333, 337, 342, 344, 349,
+       350, 351, 355, 360, 361, 362, 363, 373, 374, 375, 377, 390, 393,
+       397, 399, 403, 408, 411, 414, 419, 422, 423, 426]
+    checkpoints: [10, 25, 50]
+    validation_root_count: 100
+    audit_root_count: 100
+    critical_dimension_floor: 15
