@@ -1,0 +1,117 @@
+{
+  "created_at_local_date": "2026-08-13",
+  "source": {
+    "path": "/tmp/summarydata-viz-4341810.a57DOn/summary_train_v3.csv",
+    "sha256": "b4c70205099f1a9e54f433830c8e006479290caa645adfc591f63a5f5779293a",
+    "snapshot_commit": "4341810acabfd4165160ef538f22f4c3c9fff14f"
+  },
+  "protocol": {
+    "same_frozen_exact_root_disjoint_sample_count": 50,
+    "sampling_calls_per_valid_sample": 1,
+    "judge_calls_per_valid_sample": 2,
+    "judge_model": "gpt-5.6-luna",
+    "judge_reasoning_effort": "low",
+    "judge_prompt_changed": false,
+    "concurrency": 1,
+    "acceptance": "score >= 14 or 0 < score <= 8",
+    "infrastructure_failures_excluded_from_quality_denominator": true
+  },
+  "models": {
+    "opencode-go/qwen3.8-max": {
+      "valid_samples": 50,
+      "accepted": 44,
+      "accept_rate": 0.88,
+      "score_bands": {
+        "positive": 38,
+        "negative": 6,
+        "ambiguous": 3,
+        "unusable_zero": 3
+      },
+      "wilson_95_interval": [0.7619518261679701, 0.9438239984906773],
+      "one_sided_exact_95_lower_bound": 0.7768300102995558,
+      "successful_sampling_calls": 50,
+      "successful_judge_calls": 100,
+      "excluded_experiment_infrastructure_failures": 2,
+      "point_target_met": true,
+      "one_sided_95_lower_bound_target_met": false
+    },
+    "opencode-go/qwen3.7-plus": {
+      "valid_samples": 50,
+      "accepted": 37,
+      "accept_rate": 0.74,
+      "score_bands": {
+        "positive": 32,
+        "negative": 5,
+        "ambiguous": 5,
+        "unusable_zero": 8
+      },
+      "wilson_95_interval": [0.6044684273515117, 0.8412847250644762],
+      "one_sided_exact_95_lower_bound": 0.6187364440267678,
+      "successful_sampling_calls": 50,
+      "successful_judge_calls": 100,
+      "excluded_experiment_infrastructure_failures": 0,
+      "point_target_met": false,
+      "one_sided_95_lower_bound_target_met": false
+    },
+    "opencode-go/deepseek-v4-flash": {
+      "valid_samples": 50,
+      "accepted": 32,
+      "accept_rate": 0.64,
+      "score_bands": {
+        "positive": 28,
+        "negative": 4,
+        "ambiguous": 10,
+        "unusable_zero": 8
+      },
+      "wilson_95_interval": [0.501410168761127, 0.7586125034815325],
+      "one_sided_exact_95_lower_bound": 0.5142308487991931,
+      "successful_sampling_calls": 50,
+      "successful_judge_calls": 100,
+      "excluded_pre_opt_in_infrastructure_failures": 3,
+      "point_target_met": false,
+      "one_sided_95_lower_bound_target_met": false
+    }
+  },
+  "paired_exact_mcnemar": {
+    "qwen3.8-max_vs_qwen3.7-plus": {
+      "qwen3.8_only_accepted": 10,
+      "qwen3.7_only_accepted": 3,
+      "both_accepted": 34,
+      "neither_accepted": 3,
+      "two_sided_p_value": 0.09228515625
+    },
+    "qwen3.8-max_vs_deepseek-v4-flash": {
+      "qwen3.8_only_accepted": 13,
+      "deepseek_only_accepted": 1,
+      "both_accepted": 31,
+      "neither_accepted": 5,
+      "two_sided_p_value": 0.0018310546875
+    },
+    "qwen3.7-plus_vs_deepseek-v4-flash": {
+      "qwen3.7_only_accepted": 11,
+      "deepseek_only_accepted": 6,
+      "both_accepted": 26,
+      "neither_accepted": 7,
+      "two_sided_p_value": 0.332305908203125
+    }
+  },
+  "equal_call_three_model_pool": {
+    "valid_samples": 150,
+    "accepted": 113,
+    "accept_rate": 0.7533333333333333,
+    "wilson_95_interval": [0.6785967057397266, 0.8154183704471145],
+    "one_sided_exact_95_lower_bound": 0.6886039175912895,
+    "point_target_met": false
+  },
+  "n50_stability_note": {
+    "minimum_accepts_for_one_sided_exact_95_lower_bound_at_least_80_percent": 45,
+    "minimum_observed_rate": 0.9,
+    "qwen3.8_max_observed_accepts": 44
+  },
+  "artifacts": {
+    "qwen3.8_max_primary_run": "data/summary_train_v3_trace_relevance_safe_positive_v28_qwen38max_confirm50_unthrottled_20260812_01",
+    "qwen3.8_max_completion_run": "data/summary_train_v3_trace_relevance_safe_positive_v28_qwen38max_complete8_20260813_01",
+    "qwen3.7_plus_run": "data/summary_train_v3_trace_relevance_safe_positive_v28_qwen37plus_confirm50_unthrottled_20260813_01",
+    "deepseek_v4_flash_run": "data/summary_train_v3_trace_relevance_safe_positive_v28_deepseekv4flash_confirm50_opted_in_20260813_01"
+  }
+}

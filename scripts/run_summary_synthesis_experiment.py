@@ -71,6 +71,10 @@ def parse_args() -> argparse.Namespace:
             "trace-markdown-preserving-negative-v27",
             "trace-relevance-safe-positive-v28",
             "trace-relevance-safe-positive-v28-audit",
+            "trace-relevance-grounded-positive-v29",
+            "trace-relevance-grounded-positive-v29-validation",
+            "trace-relevance-grounded-positive-v30",
+            "trace-relevance-grounded-positive-v30-validation",
         ),
         required=True,
     )
@@ -173,6 +177,14 @@ def main() -> None:
             report = experiment.run_trace_relevance_safe_positive_v28()
         elif args.phase == "trace-relevance-safe-positive-v28-audit":
             report = experiment.run_trace_relevance_safe_positive_v28_audit()
+        elif args.phase == "trace-relevance-grounded-positive-v29":
+            report = experiment.run_trace_relevance_grounded_positive_v29()
+        elif args.phase == "trace-relevance-grounded-positive-v29-validation":
+            report = experiment.run_trace_relevance_grounded_positive_v29_validation()
+        elif args.phase == "trace-relevance-grounded-positive-v30":
+            report = experiment.run_trace_relevance_grounded_positive_v30()
+        elif args.phase == "trace-relevance-grounded-positive-v30-validation":
+            report = experiment.run_trace_relevance_grounded_positive_v30_validation()
         else:
             raise AssertionError(f"unhandled phase: {args.phase}")
         request_usage = report_request_usage(report)

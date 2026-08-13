@@ -1,0 +1,49 @@
+experiment:
+  source_path: /tmp/summarydata-viz-4341810.a57DOn/summary_train_v3.csv
+  expected_source_sha256: b4c70205099f1a9e54f433830c8e006479290caa645adfc591f63a5f5779293a
+  snapshot_commit: 4341810acabfd4165160ef538f22f4c3c9fff14f
+  snapshot_repo: /Volumes/SSD1/summarydata
+  source_git_path: summary_train_v3.csv
+  legacy_response_prompt_git_path: response_prompt_v2.py
+  legacy_scorer_git_path: src/scoring/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py
+  legacy_response_prompt: /tmp/summarydata-viz-4341810.a57DOn/response_prompt_v2.py
+  legacy_scorer: /tmp/summarydata-viz-4341810.a57DOn/src/scoring/kto_binary_label_pipeline_dual_multi_judge_patched_v2_batch_repeats.py
+  generation:
+    base_url: http://127.0.0.1:18001/v1
+    model: opencode-go/kimi-k2.6
+    concurrency: 1
+  judge:
+    base_url: http://127.0.0.1:8000/v1
+    base_urls: [http://127.0.0.1:8000/v1]
+    model: gpt-5.6-luna
+    reasoning_effort: low
+    concurrency: 1
+    initial_request_delay_seconds: 0
+    min_request_interval_seconds: 0
+  canary_indices: [0, 1, 2, 3, 4]
+  compare_count: 12
+  judge_repeats: 1
+  pass_threshold_strictly_greater_than: 14
+  acceptance:
+    positive_min_score_inclusive: 14
+    negative_min_score_exclusive: 0
+    negative_max_score_inclusive: 8
+  request_caps: {qwen: 2, luna: 4}
+  max_attempts_per_operation: 1
+  stop_after_consecutive_failures: 3
+  trace:
+    pipeline_epoch: trace-relevance-grounded-positive-v30-v3-kimik26-validation50-repair1-20260813-v1
+    phase1_count: 2
+    excluded_indices_file: summary_train_v3_consumed_indices_before_v30_20260813.json
+    validation_excluded_indices:
+      [223, 394, 409, 358, 279, 316, 257, 18, 175, 410, 383, 141, 65, 233,
+       253, 297, 201, 57, 405, 347, 77, 420, 10, 158, 70, 306, 243, 305, 126,
+       392, 367, 221, 368, 315, 314, 210, 402, 208, 227, 318, 133, 140, 389,
+       209, 58, 398, 129, 232]
+    audit_excluded_indices: []
+    split_protected_indices_file: summary_train_v3_consumed_indices_before_v30_20260813.json
+    checkpoints: [2]
+    validation_root_count: 50
+    audit_root_count: 0
+    critical_dimension_floor: 15
+    stop_when_target_impossible: false

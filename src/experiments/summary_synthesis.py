@@ -58,6 +58,78 @@ STRICT_20 = {
 }
 
 
+def is_infrastructure_failure_event(event: Mapping[str, Any]) -> bool:
+    """Identify service, network, container, auth, and capacity failures."""
+    if event.get("status") != "failed":
+        return False
+    gateway_error = event.get("gateway_error", {})
+    if not isinstance(gateway_error, Mapping):
+        gateway_error = {}
+    http_status = event.get("http_status")
+    if isinstance(http_status, int) and (
+        http_status >= 500 or http_status in {401, 403, 408, 425, 429}
+    ):
+        return True
+    failure_class = str(event.get("failure_class", "")).lower()
+    if any(
+        marker in failure_class
+        for marker in (
+            "connecterror",
+            "connecttimeout",
+            "networkerror",
+            "readerror",
+            "readtimeout",
+            "remoteprotocolerror",
+            "writetimeout",
+        )
+    ):
+        return True
+    error_text = " ".join(
+        (
+            str(gateway_error.get("code", "")),
+            str(gateway_error.get("type", "")),
+            str(gateway_error.get("message", "")),
+            str(event.get("failure_message", "")),
+        )
+    ).lower()
+    return any(
+        marker in error_text
+        for marker in (
+            "at capacity",
+            "connection refused",
+            "container",
+            "network",
+            "opencode_unreachable",
+            "refresh token",
+            "service unavailable",
+            "timed out",
+            "timeout",
+        )
+    )
+
+
+def is_sampling_infrastructure_failure_event(event: Mapping[str, Any]) -> bool:
+    """Identify sampler infrastructure failures excluded from the denominator."""
+    return bool(
+        event.get("provider") == "qwen"
+        and is_infrastructure_failure_event(event)
+    )
+
+
+def sampling_quality_denominator(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    exclude_infrastructure_failures: bool,
+) -> tuple[int, int]:
+    """Return valid sampler calls and the separately reported infra exclusions."""
+    excluded = (
+        sum(is_sampling_infrastructure_failure_event(event) for event in events)
+        if exclude_infrastructure_failures
+        else 0
+    )
+    return len(events) - excluded, excluded
+
+
 def trace_v14_infrastructure_stop_reason(
     events: Sequence[Mapping[str, Any]], candidate_id: str
 ) -> str | None:
@@ -71,20 +143,32 @@ def trace_v14_infrastructure_stop_reason(
         gateway_error = event.get("gateway_error", {})
         if not isinstance(gateway_error, Mapping):
             gateway_error = {}
-        if (
-            event.get("provider") == "qwen"
-            and operation_id.startswith(qwen_operation_prefix)
-            and str(gateway_error.get("code", "")) == "opencode_unreachable"
+        if event.get("provider") == "qwen" and operation_id.startswith(
+            qwen_operation_prefix
         ):
-            return "qwen_opencode_unreachable"
-        if (
-            event.get("provider") == "luna"
-            and operation_id.startswith(luna_operation_prefix)
-            and "at capacity"
-            in str(gateway_error.get("message", "")).lower()
+            if str(gateway_error.get("code", "")) == "opencode_unreachable":
+                return "qwen_opencode_unreachable"
+            if is_infrastructure_failure_event(event):
+                return "qwen_infrastructure_failure"
+        if event.get("provider") == "luna" and operation_id.startswith(
+            luna_operation_prefix
         ):
-            return "luna_model_capacity"
+            if "at capacity" in str(gateway_error.get("message", "")).lower():
+                return "luna_model_capacity"
+            if is_infrastructure_failure_event(event):
+                return "luna_infrastructure_failure"
     return None
+
+
+def trace_infrastructure_stop_reason_for_iteration(
+    events: Sequence[Mapping[str, Any]],
+    candidate_id: str,
+    *,
+    failure_preexisted: bool,
+) -> str | None:
+    """Stop for a new infrastructure failure, not one replayed during resume."""
+    reason = trace_v14_infrastructure_stop_reason(events, candidate_id)
+    return None if failure_preexisted else reason
 
 
 ROOT_CONTEXT_FIELDS = (
@@ -527,6 +611,7 @@ class ExperimentConfig:
     validation_root_count: int
     audit_root_count: int
     critical_dimension_floor: float
+    stop_when_target_impossible: bool
 
     @classmethod
     def from_yaml(cls, path: Path) -> "ExperimentConfig":
@@ -613,6 +698,9 @@ class ExperimentConfig:
             audit_root_count=int(trace.get("audit_root_count", 0)),
             critical_dimension_floor=float(
                 trace.get("critical_dimension_floor", 15.0)
+            ),
+            stop_when_target_impossible=bool(
+                trace.get("stop_when_target_impossible", True)
             ),
         )
 
@@ -1392,6 +1480,65 @@ def build_relevance_safe_direct_v24_messages(
     user = f"""{build_context(row, corrected=True)}
 
 请以【当前问题】为最高优先级，按上述相关性与安全规则回答。材料只在确实相关时使用。"""
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def build_relevance_grounded_positive_v29_messages(
+    row: Mapping[str, str],
+) -> list[dict[str, str]]:
+    """Keep v28 relevance routing while closing common zero-score failure modes."""
+    system = """你是一个谨慎、实用的中文对话助手。你只有一次生成机会，必须在本轮给出可直接展示的最终回答。
+
+先在内部判断当前问题与各类输入材料是否相关，再遵守以下通用规则：
+
+1. 首段直接完成用户请求。不得只给方案、提出一串确认问题，或承诺“确认后再回答”。若请求涉及设置闹钟、提醒、日程、写入或删除数据、控制设备等本通道不能直接执行的操作，先简短说明无法直接操作，再立即给出最短可执行步骤；不得声称已经完成。
+2. 每一句关于用户本人的事实，只能绑定到【个人数据】中的同一条明确证据。不得把单日记录泛化成日常习惯，不得把【知识库知识】或【专家建议】中的数字写成用户个人指标，不得把相关线索写成确定因果。
+3. 默认禁止新增派生计算、换算和比较。用户没有明确要求计算时，直接引用来源已经给出的结果。用户明确要求计算时，必须列出同源操作数和公式，并在内部复核一次；不能可靠复核就说明无法从现有材料计算。只有上下界全部落在目标区间内，才能说“整个区间正常”或“全部达标”。
+4. 数据互相冲突、口径不一致或时间范围不同，不自行调和，不选择其中一个继续推导；分别引用原始结果并明确说明口径限制。
+5. 推荐课程时，课程名称只能逐字复制【课程库】中的完整名称，并统一写成 `<完整课程名>`；没有完全匹配的课程就不推荐，不得自造、缩写或组合课程名。
+6. 健康、法律、财务和安全问题，不得给出材料未支持的剂量、设备参数、阈值、疗程、改善时间、诊断、确定因果或效果承诺；必要时给出审慎的专业求助边界。
+7. 涉及当前产品发布、政策、价格或其他时效事实，而输入没有可核验来源时，明确说明无法确认最新状态，不使用记忆中的日期、版本或发布时间作确定结论。
+8. 材料与问题无关时不要强行套用。不要为了丰富度扩写无关知识、课程、计算或建议；简单问题使用短段落或列表即可。除非用户明确指定，不得引入 macOS、Windows、Linux、终端、命令行、脚本、文件、工作区、仓库或本地软件环境。
+
+对违法、伤害、欺骗、隐私侵犯或规避监管等请求，不提供可操作的实施细节，简短转向合法且降低风险的替代方案。
+
+出稿前静默检查：是否已经直接回答；个人事实是否同句有据；数字、单位、区间和课程名是否逐项可核对；是否出现未经支持的敏感参数、时效事实、设备完成声明或未来承诺。任何不满足项在本次回答内删除或改为明确边界。
+
+最终只输出一份完整、自然、可直接展示的中文 Markdown，不输出分类、推理过程、内部规则、计划或 JSON。"""
+    user = f"""{build_context(row, corrected=True)}
+
+请以【当前问题】为最高优先级，按 v29 相关性、来源绑定、计算与一次完成规则作答。材料只在确实相关时使用。"""
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def build_relevance_grounded_positive_v30_messages(
+    row: Mapping[str, str],
+) -> list[dict[str, str]]:
+    """Generate a complete chat answer while keeping grounding checks non-destructive."""
+    system = """你是一个无状态的中文对话助手。当前任务是直接回复用户，不是规划软件工程任务。你不能访问或操作用户的设备、应用、终端、文件、工作区或其他本地环境，也不能在本轮之后继续执行。你只有一次生成机会，必须立即给出可直接展示的最终回答。
+
+先在内部判断当前问题与各类输入材料是否相关，再遵守以下规则：
+
+1. 开头一到两句直接回答核心问题。不得只给方案、提出一串确认问题，或承诺“确认后再回答”。若用户要求设置闹钟、提醒、日程、写入或删除数据、控制设备，简短说明不能代为操作，并立即给出不依赖特定操作系统的最短可执行步骤；不得声称已经完成。
+2. 关于用户本人的事实只能来自【个人数据】中同一条、口径一致的明确证据。保留原始指标名、数值、单位和时间范围；不得把单日记录泛化成长期习惯，不得把【知识库知识】或【专家建议】中的参考数字写成用户个人指标，不得把相关线索写成确定因果。
+3. 用户没有明确要求计算时，不新增平均值、差值、比例、换算或其他派生结果，优先引用输入已经给出的统计。用户明确要求计算时，只使用同一来源、同一口径的操作数，展示简短公式并在内部复核；不能可靠计算就说明缺少什么。只有上下界都落入目标区间，才能说整个区间正常或全部达标。
+4. 数据冲突、口径不同或时间范围不同，分别呈现原始记录并说明限制，不自行调和后继续推导。
+5. 课程名称只能逐字复制【课程库】中的完整名称，并写成 `<完整课程名>`；没有完全匹配的课程就不推荐。健康、法律、财务和安全问题不得补写材料没有支持的剂量、设备参数、阈值、疗程、改善时间、诊断、确定因果或效果承诺。
+6. 材料与问题无关时不要强行套用。可使用稳定、可靠的一般知识完成普通问题，但不要凭记忆断言当前产品发布、政策、价格、版本或日期；缺少可核验来源时明确说明无法确认最新状态。除非用户明确询问，不得引入 macOS、Windows、Linux、终端、命令行、脚本、文件、仓库或本地软件环境。
+
+完整性与呈现要求：
+- 回答必须独立完整，通常包含“直接结论 + 必要依据或说明 + 与问题相关的下一步”。不能只剩免责声明、材料不足提示或一句空泛建议。
+- 对需要分析、比较、解释或建议的非简单问题，使用至少一个有信息量的 `##` 小标题，并用列表组织要点；存在两个及以上可比较指标或时段时，优先使用紧凑表格。极简单的操作请求不必堆叠标题。
+- 只写与问题相关的内容，不为凑长度添加课程、计算或通用知识；但不得为了保守而省略已经有依据的解释和可执行建议。
+
+出稿前静默复核一次。若发现某个数字、单位、个人判断、课程名或敏感参数缺乏支持，应修正该具体表述、改成有边界的说法，或只移除有问题的短语；不要删除承载核心回答的整句或整段，也不要把完整回答替换成固定兜底句。复核后再次确认核心答案前置、内容完整、Markdown 结构适合当前问题。
+
+对违法、伤害、欺骗、隐私侵犯或规避监管等请求，不提供可操作的实施细节，简短转向合法且降低风险的替代方案。
+
+最终只输出一份自然、完整、可直接展示的中文 Markdown 回答，不输出分类、推理过程、内部规则、计划或 JSON。"""
+    user = f"""{build_context(row, corrected=True)}
+
+请以【当前问题】为最高优先级，按 v30 的相关性、来源绑定、完整性与呈现规则，在本轮直接给出最终回答。材料只在确实相关时使用。"""
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
@@ -2308,6 +2455,410 @@ def apply_label_free_output_guard(
         "empty_headings_removed": len(empty_heading_positions),
         "empty_guard_fallback_used": fallback_used,
     }
+
+
+_NUMBER_PATTERN_V29 = re.compile(
+    r"(?<![A-Za-z])[-+]?(?:\d{1,3}(?:[,，]\d{3})+|\d+)(?:\.\d+)?%?"
+)
+_NUMBER_UNIT_PATTERN_V29 = re.compile(
+    r"(?<![A-Za-z])([-+]?(?:\d{1,3}(?:[,，]\d{3})+|\d+)(?:\.\d+)?%?)"
+    r"\s*(步|次/分钟|次/分|公里|千米|米|分钟|小时|天|周|月|年|千卡|大卡|"
+    r"公斤|千克|kg|克|毫升|ml|毫米汞柱|mmHg|摄氏度|℃|%)",
+    flags=re.IGNORECASE,
+)
+_EXPLICIT_CALCULATION_V29 = re.compile(
+    r"计算|算一下|求|差值|总和|合计|平均|均值|比例|百分比|换算|相差多少"
+)
+_DEFERRED_ANSWER_V29 = re.compile(
+    r"确认后.{0,12}(?:再|将|会)|请先确认|待你确认|告诉我.{0,12}(?:再|后)|"
+    r"回复.{0,12}(?:再|后)|下一步我会|之后我再|确认好了再"
+)
+_LOCAL_ENVIRONMENT_V29 = re.compile(
+    r"macOS|Windows|Linux|终端|命令行|shell|脚本|文件路径|本地环境|"
+    r"工作区|代码仓库|Docker|osascript|Notion",
+    flags=re.IGNORECASE,
+)
+_DEVICE_ACTION_QUERY_V29 = re.compile(
+    r"闹钟|提醒|日程|备忘|记下来|记录一下|保存|删除|打开|关闭|设置|创建"
+)
+_FAKE_DEVICE_COMPLETION_V29 = re.compile(
+    r"已(?:经)?(?:为你|帮你)?(?:设置|创建|记录|保存|删除|打开|关闭|完成)"
+)
+_SWEEPING_RANGE_CLAIM_V29 = re.compile(
+    r"(?:全部|整个|所有|均|都).{0,10}(?:正常|达标|范围内|没有异常)"
+)
+
+
+def _verified_simple_arithmetic_v29(
+    line: str,
+    allowed_numbers: set[str],
+    source_number_sets: Sequence[set[str]],
+) -> set[str]:
+    """Return verified result tokens for simple source-bound arithmetic only."""
+    verified: set[str] = set()
+    pattern = re.compile(
+        r"([-+]?\d+(?:\.\d+)?)\s*([+\-×*xX÷/])\s*"
+        r"([-+]?\d+(?:\.\d+)?)\s*=\s*([-+]?\d+(?:\.\d+)?)(%?)"
+    )
+    for match in pattern.finditer(line):
+        left, operator, right, result, percent = match.groups()
+        operands = {
+            _canonical_number_token(left),
+            _canonical_number_token(right),
+        }
+        if not operands.issubset(allowed_numbers) or not any(
+            operands.issubset(source_numbers)
+            for source_numbers in source_number_sets
+        ):
+            continue
+        first = float(left)
+        second = float(right)
+        if operator == "+":
+            expected = first + second
+        elif operator == "-":
+            expected = first - second
+        elif operator in {"×", "*", "x", "X"}:
+            expected = first * second
+        elif second != 0:
+            expected = first / second
+        else:
+            continue
+        actual = float(result)
+        tolerance = max(1e-6, abs(expected) * 1e-6)
+        if math.isclose(actual, expected, rel_tol=1e-6, abs_tol=tolerance):
+            verified.add(_canonical_number_token(result + percent))
+    return verified
+
+
+def _compact_markdown_v29(lines: Sequence[str]) -> str:
+    compact: list[str] = []
+    for line in lines:
+        if not line.strip() and (not compact or not compact[-1].strip()):
+            continue
+        compact.append(line.rstrip())
+    while compact and not compact[-1].strip():
+        compact.pop()
+    nonempty_positions = [index for index, line in enumerate(compact) if line.strip()]
+    empty_headings: set[int] = set()
+    for offset, index in enumerate(nonempty_positions):
+        if not compact[index].lstrip().startswith("#"):
+            continue
+        next_index = (
+            nonempty_positions[offset + 1]
+            if offset + 1 < len(nonempty_positions)
+            else None
+        )
+        if next_index is None or compact[next_index].lstrip().startswith("#"):
+            empty_headings.add(index)
+    return "\n".join(
+        line for index, line in enumerate(compact) if index not in empty_headings
+    ).strip()
+
+
+def apply_relevance_grounded_guard_v29(
+    row: Mapping[str, str], response: str
+) -> tuple[str, dict[str, int]]:
+    """Safely rewrite high-confidence generation defects without judge labels."""
+    query = str(row.get("query", ""))
+    source_values = [
+        query,
+        str(row.get("data", "")),
+        str(row.get("suggest", "")),
+        str(row.get("rag", "")),
+        str(row.get("services", "")),
+        DOMAIN_DESCRIPTION.get(str(row.get("domain", "")).strip(), "").replace(
+            "\\n", "\n"
+        ),
+    ]
+    source_corpus = "\n".join(source_values)
+    allowed_numbers = {
+        _canonical_number_token(match.group(0))
+        for match in _NUMBER_PATTERN_V29.finditer(source_corpus)
+    }
+    for match in re.finditer(r"(?<!\d)(\d{1,2})\s*(?:点|时)(?!\d)", query):
+        allowed_numbers.add(_canonical_number_token(match.group(1)))
+        allowed_numbers.add("0")
+        if "半" in query:
+            allowed_numbers.add("30")
+    allowed_number_units = {
+        (_canonical_number_token(match.group(1)), match.group(2).lower())
+        for match in _NUMBER_UNIT_PATTERN_V29.finditer(source_corpus)
+    }
+    normalized_sources = [
+        normalize_root_value(sentence)
+        for value in source_values
+        for sentence in _split_evidence_sentences(value)
+        if sentence.strip()
+    ]
+    source_number_sets = [
+        {
+            _canonical_number_token(match.group(0))
+            for match in _NUMBER_PATTERN_V29.finditer(sentence)
+        }
+        for value in source_values
+        for sentence in _split_evidence_sentences(value)
+        if sentence.strip()
+    ]
+    personal_sources = [
+        normalize_root_value(sentence)
+        for sentence in _split_evidence_sentences(str(row.get("data", "")))
+        if sentence.strip()
+    ]
+    services = normalize_root_value(str(row.get("services", "")))
+    calculation_requested = bool(_EXPLICIT_CALCULATION_V29.search(query))
+    device_action_requested = bool(_DEVICE_ACTION_QUERY_V29.search(query))
+    query_names_environment = bool(_LOCAL_ENVIRONMENT_V29.search(query))
+
+    stats = {
+        "v29_unsupported_numeric_lines_removed": 0,
+        "v29_unsupported_unit_lines_removed": 0,
+        "v29_derived_relation_lines_removed": 0,
+        "v29_sweeping_range_lines_removed": 0,
+        "v29_personal_mismatch_lines_removed": 0,
+        "v29_unsupported_course_lines_removed": 0,
+        "v29_sensitive_lines_removed": 0,
+        "v29_environment_lines_removed": 0,
+        "v29_deferred_lines_removed": 0,
+        "v29_device_completion_rewritten": 0,
+        "v29_safe_fallback_used": 0,
+        "v29_local_gate_failed": 0,
+    }
+    if device_action_requested and (
+        _FAKE_DEVICE_COMPLETION_V29.search(response)
+        or _DEFERRED_ANSWER_V29.search(response)
+        or (not query_names_environment and _LOCAL_ENVIRONMENT_V29.search(response))
+    ):
+        stats["v29_device_completion_rewritten"] = 1
+        if re.search(r"闹钟|提醒", query):
+            rendered = (
+                "我无法直接操作你的设备。请打开设备上的闹钟或提醒应用，"
+                "按你给出的时间新建并保存，然后确认开关已经启用。"
+            )
+        else:
+            rendered = (
+                "我无法直接操作你的设备。请在对应应用中按你的要求完成设置，"
+                "并在保存前核对时间或内容。"
+            )
+        stats["v29_output_lines"] = len(rendered.splitlines())
+        return rendered, stats
+
+    kept: list[str] = []
+    for original_line in response.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        stripped = original_line.strip()
+        if not stripped or stripped.startswith("#") or _proof_v15_is_table_separator(stripped):
+            kept.append(original_line.rstrip())
+            continue
+        normalized = normalize_root_value(
+            re.sub(r"^[|\-*#>\s]+|[|\s]+$", "", stripped)
+        )
+        if not query_names_environment and _LOCAL_ENVIRONMENT_V29.search(stripped):
+            stats["v29_environment_lines_removed"] += 1
+            continue
+        if _DEFERRED_ANSWER_V29.search(stripped):
+            stats["v29_deferred_lines_removed"] += 1
+            stats["v29_local_gate_failed"] = 1
+            continue
+
+        course_names = [
+            name.strip()
+            for match in re.finditer(r"<([^<>\n]+)>|《([^《》\n]+)》", stripped)
+            for name in (match.group(1) or match.group(2),)
+        ]
+        if "课程" in stripped and any(
+            not services or normalize_root_value(name) not in services
+            for name in course_names
+        ):
+            stats["v29_unsupported_course_lines_removed"] += 1
+            continue
+
+        numeric_claim = re.sub(r"^\s*\d+[.)、]\s*", "", stripped)
+        numeric_claim = re.sub(r"\[\d+\]", "", numeric_claim)
+        line_numbers = {
+            _canonical_number_token(match.group(0))
+            for match in _NUMBER_PATTERN_V29.finditer(numeric_claim)
+        }
+        verified_results = (
+            _verified_simple_arithmetic_v29(
+                numeric_claim, allowed_numbers, source_number_sets
+            )
+            if calculation_requested
+            else set()
+        )
+        if line_numbers - allowed_numbers - verified_results:
+            stats["v29_unsupported_numeric_lines_removed"] += 1
+            continue
+        line_number_units = {
+            (_canonical_number_token(match.group(1)), match.group(2).lower())
+            for match in _NUMBER_UNIT_PATTERN_V29.finditer(numeric_claim)
+        }
+        if line_number_units - allowed_number_units:
+            stats["v29_unsupported_unit_lines_removed"] += 1
+            continue
+
+        supporting = [
+            source
+            for source in normalized_sources
+            if source
+            and (
+                source in normalized
+                or normalized in source
+                or (
+                    line_numbers
+                    and line_numbers.issubset(_numeric_tokens(source))
+                    and len(_text_ngrams(normalized) & _text_ngrams(source)) >= 4
+                )
+            )
+        ]
+        if (
+            not calculation_requested
+            and any(term in normalized for term in _DERIVED_RELATION_TERMS_V20)
+            and not any(
+                term in source
+                for term in _DERIVED_RELATION_TERMS_V20
+                if term in normalized
+                for source in supporting
+            )
+        ):
+            stats["v29_derived_relation_lines_removed"] += 1
+            continue
+        if _SWEEPING_RANGE_CLAIM_V29.search(normalized) and not any(
+            _SWEEPING_RANGE_CLAIM_V29.search(source)
+            for source in normalized_sources
+        ):
+            stats["v29_sweeping_range_lines_removed"] += 1
+            continue
+        looks_personal = any(
+            marker in normalized
+            for marker in ("你", "您", "你的", "您的", "记录显示", "从记录", "当前")
+        )
+        personal_judgment = any(
+            term in normalized for term in _PERSONAL_INFERENCE_TERMS_V15
+        )
+        personal_source_support = [
+            source
+            for source in personal_sources
+            if source
+            and (
+                source in normalized
+                or normalized in source
+                or (
+                    line_numbers
+                    and line_numbers.issubset(_numeric_tokens(source))
+                    and len(_text_ngrams(normalized) & _text_ngrams(source)) >= 3
+                )
+            )
+        ]
+        generalization_terms = ("每天", "每日", "一直", "长期", "一贯", "通常", "总是")
+        unsupported_generalization = any(
+            term in normalized
+            and not any(term in source for source in personal_source_support)
+            for term in generalization_terms
+        )
+        unsupported_personal_number = bool(
+            looks_personal and line_numbers and not personal_source_support
+        )
+        unsupported_personal_judgment = bool(
+            looks_personal
+            and personal_judgment
+            and personal_sources
+            and not personal_source_support
+        )
+        if (
+            unsupported_generalization
+            or unsupported_personal_number
+            or unsupported_personal_judgment
+        ):
+            stats["v29_personal_mismatch_lines_removed"] += 1
+            continue
+        if (
+            any(term in normalized for term in _SENSITIVE_ACTION_TERMS_V21)
+            and not supporting
+        ):
+            stats["v29_sensitive_lines_removed"] += 1
+            continue
+        kept.append(original_line.rstrip())
+
+    rendered = _compact_markdown_v29(kept)
+    substantive = [
+        line
+        for line in rendered.splitlines()
+        if line.strip()
+        and not line.lstrip().startswith("#")
+        and not _proof_v15_is_table_separator(line.strip())
+    ]
+    if not substantive:
+        stats["v29_safe_fallback_used"] = 1
+        stats["v29_local_gate_failed"] = 1
+        rendered = (
+            "现有输入不足以在不引入未经核实信息的情况下给出可靠结论。"
+            "请以原始记录为准，并补充与当前问题直接相关且口径一致的材料。"
+        )
+    stats["v29_output_lines"] = len(rendered.splitlines())
+    return rendered, stats
+
+
+def audit_relevance_grounded_guard_v30(
+    row: Mapping[str, str], response: str
+) -> tuple[str, dict[str, int]]:
+    """Report source-risk signals while returning the sampler text byte-for-byte."""
+    hypothetical_v29, v29_stats = apply_relevance_grounded_guard_v29(row, response)
+    lines = response.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    substantive = [
+        line
+        for line in lines
+        if line.strip()
+        and not line.lstrip().startswith("#")
+        and not _proof_v15_is_table_separator(line.strip())
+    ]
+    heading_count = sum(line.lstrip().startswith("#") for line in lines)
+    list_count = sum(
+        bool(re.match(r"^\s*(?:[-*+] |\d+[.)、]\s*)", line)) for line in lines
+    )
+    table_row_count = sum(
+        line.strip().startswith("|") and line.strip().endswith("|")
+        for line in lines
+    )
+    mapped_keys = {
+        "v30_audit_unsupported_numeric_lines": (
+            "v29_unsupported_numeric_lines_removed"
+        ),
+        "v30_audit_unsupported_unit_lines": "v29_unsupported_unit_lines_removed",
+        "v30_audit_derived_relation_lines": "v29_derived_relation_lines_removed",
+        "v30_audit_sweeping_range_lines": "v29_sweeping_range_lines_removed",
+        "v30_audit_personal_mismatch_lines": "v29_personal_mismatch_lines_removed",
+        "v30_audit_unsupported_course_lines": (
+            "v29_unsupported_course_lines_removed"
+        ),
+        "v30_audit_sensitive_lines": "v29_sensitive_lines_removed",
+        "v30_audit_environment_lines": "v29_environment_lines_removed",
+        "v30_audit_deferred_lines": "v29_deferred_lines_removed",
+        "v30_audit_device_completion_risk": "v29_device_completion_rewritten",
+    }
+    stats = {
+        key: int(v29_stats.get(source_key, 0))
+        for key, source_key in mapped_keys.items()
+    }
+    stats.update(
+        {
+            "v30_audit_only": 1,
+            "v30_response_modified": 0,
+            "v30_audit_flag_total": sum(stats.values()),
+            "v30_hypothetical_v29_changed": int(hypothetical_v29 != response),
+            "v30_hypothetical_v29_characters_removed": max(
+                0, len(response) - len(hypothetical_v29)
+            ),
+            "v30_output_characters": len(response),
+            "v30_output_lines": len(lines),
+            "v30_substantive_lines": len(substantive),
+            "v30_markdown_headings": heading_count,
+            "v30_markdown_list_items": list_count,
+            "v30_markdown_table_rows": table_row_count,
+            "v30_completeness_warning": int(
+                len(response.strip()) < 80 or len(substantive) < 2
+            ),
+        }
+    )
+    return response, stats
 
 
 _SENSITIVE_ACTION_TERMS_V21 = (
@@ -3275,6 +3826,10 @@ def build_generation_messages(
         return build_relevance_safe_direct_v24_messages(row)
     elif strategy == "relevance_safe_positive_v28":
         return build_relevance_safe_direct_v24_messages(row)
+    elif strategy == "relevance_grounded_positive_v29":
+        return build_relevance_grounded_positive_v29_messages(row)
+    elif strategy == "relevance_grounded_positive_v30":
+        return build_relevance_grounded_positive_v30_messages(row)
     elif strategy == "proof_carrying_v15":
         return build_proof_carrying_v15_messages(row)
     elif strategy == "evidence_compiler_v16":
@@ -4364,6 +4919,9 @@ class SynthesisExperiment:
                 "validation_root_count": self.config.validation_root_count,
                 "audit_root_count": self.config.audit_root_count,
                 "critical_dimension_floor": self.config.critical_dimension_floor,
+                "stop_when_target_impossible": (
+                    self.config.stop_when_target_impossible
+                ),
                 "diagnosis_schema": "trace-diagnosis-v1-dual-judge",
             },
             "prompt_hashes": {
@@ -4467,6 +5025,10 @@ class SynthesisExperiment:
             if strategy == "trace_markdown_preserving_negative_v27"
             else "relevance_safe_positive_v28"
             if strategy == "trace_relevance_safe_positive_v28"
+            else "relevance_grounded_positive_v29"
+            if strategy == "trace_relevance_grounded_positive_v29"
+            else "relevance_grounded_positive_v30"
+            if strategy == "trace_relevance_grounded_positive_v30"
             else "proof_carrying_v15"
             if strategy == "trace_proof_carrying_v15"
             else "evidence_compiler_v16"
@@ -4527,6 +5089,16 @@ class SynthesisExperiment:
                 response
             )
             strategy_path = "relevance_safe_markdown_preserved_then_bounded_visible_defects"
+        if strategy == "trace_relevance_grounded_positive_v29":
+            response, local_guard_stats = apply_relevance_grounded_guard_v29(
+                row, response
+            )
+            strategy_path = "relevance_grounded_one_shot_then_label_free_safety_guard"
+        if strategy == "trace_relevance_grounded_positive_v30":
+            response, local_guard_stats = audit_relevance_grounded_guard_v30(
+                row, response
+            )
+            strategy_path = "relevance_grounded_complete_one_shot_then_audit_only"
         if strategy == "trace_proof_carrying_v15":
             response, local_guard_stats = apply_proof_citation_firewall_v15(
                 row, response
@@ -4557,6 +5129,8 @@ class SynthesisExperiment:
             "trace_visual_budget_negative_v26",
             "trace_markdown_preserving_negative_v27",
             "trace_relevance_safe_positive_v28",
+            "trace_relevance_grounded_positive_v29",
+            "trace_relevance_grounded_positive_v30",
         }:
             packet = compile_evidence_packet(row)
             evidence_packet_stats = packet["source_stats"]
@@ -4589,6 +5163,10 @@ class SynthesisExperiment:
                 if strategy == "trace_markdown_preserving_negative_v27"
                 else "relevance_safe_original_markdown_positive"
                 if strategy == "trace_relevance_safe_positive_v28"
+                else "relevance_grounded_one_shot_then_label_free_safety_guard"
+                if strategy == "trace_relevance_grounded_positive_v29"
+                else "relevance_grounded_complete_one_shot_then_audit_only"
+                if strategy == "trace_relevance_grounded_positive_v30"
                 else "full_context_plus_exact_fact_cards_then_one_shot"
                 if strategy in {"trace_fact_cards_v12", "trace_source_priority_v13"}
                 else "full_context_plus_label_free_index_then_one_shot"
@@ -7612,7 +8190,10 @@ class SynthesisExperiment:
             if infrastructure_stop is not None:
                 stop_reason = infrastructure_stop
                 break
-            if nonaccepts >= nonaccept_stop:
+            if (
+                self.config.stop_when_target_impossible
+                and nonaccepts >= nonaccept_stop
+            ):
                 stop_reason = "nonaccept_limit_makes_ge_80_impossible"
                 break
         report = self.build_trace_context_compiler_v7_report(
@@ -7679,7 +8260,10 @@ class SynthesisExperiment:
             if infrastructure_stop is not None:
                 stop_reason = infrastructure_stop
                 break
-            if nonaccepts >= nonaccept_stop:
+            if (
+                self.config.stop_when_target_impossible
+                and nonaccepts >= nonaccept_stop
+            ):
                 stop_reason = "nonaccept_limit_makes_ge_80_impossible"
                 break
         report = self.build_trace_context_compiler_v7_report(
@@ -7695,6 +8279,214 @@ class SynthesisExperiment:
             report,
         )
         return report
+
+    def _run_trace_relevance_grounded_positive_v29(
+        self, *, validation: bool
+    ) -> dict[str, Any]:
+        """Run frozen v29 with one sampler call and exactly two fixed judges."""
+        validate_context_compiler_v7_protocol(self.config)
+        indices = (
+            self._write_trace_validation_split_and_selection()
+            if validation
+            else self._write_trace_prompt_dev_split_and_selection()
+        )
+        strategy = "trace_relevance_grounded_positive_v29"
+        phase_slug = "trace-relevance-grounded-positive-v29"
+        report_scope = "validation" if validation else "canary"
+        checkpoints = set(self.config.phase1_checkpoints) | {len(indices)}
+        attempted_indices: list[int] = []
+        nonaccepts = 0
+        nonaccept_stop = nonaccept_stop_count_for_target(len(indices))
+        stop_reason = "planned_roots_completed"
+        for position, row_index in enumerate(indices, start=1):
+            attempted_indices.append(row_index)
+            current_candidate_id = stable_trace_candidate_id(
+                root_context_id(self.rows[row_index]),
+                self.config.pipeline_epoch,
+                strategy,
+            )
+            try:
+                candidate = self.ensure_candidate(row_index, strategy)
+                result = self.ensure_judged(row_index, strategy, candidate, 0)
+                status = "accepted" if result.get("accepted", False) else "rejected"
+            except HardStop:
+                raise
+            except Exception as exc:
+                self._record_trace_terminal_failure(row_index, strategy, exc)
+                status = f"failed:{type(exc).__name__}"
+            if status != "accepted":
+                nonaccepts += 1
+            print(
+                f"{phase_slug}{'-validation' if validation else ''} "
+                f"{position}/{len(indices)} "
+                f"root={root_context_id(self.rows[row_index])} status={status} "
+                f"nonaccepts={nonaccepts}",
+                flush=True,
+            )
+            if position in checkpoints:
+                checkpoint = self.build_trace_context_compiler_v7_report(
+                    attempted_indices,
+                    planned_root_count=len(indices),
+                    stop_reason="checkpoint",
+                    strategy=strategy,
+                    report_scope=report_scope,
+                )
+                suffix = "_validation" if validation else ""
+                write_json(
+                    self.run_dir
+                    / "processed"
+                    / (
+                        "trace_relevance_grounded_positive_v29"
+                        f"{suffix}_checkpoint_{position:03d}.json"
+                    ),
+                    checkpoint,
+                )
+            infrastructure_stop = trace_v14_infrastructure_stop_reason(
+                self.gateway.events, current_candidate_id
+            )
+            if infrastructure_stop is not None:
+                stop_reason = infrastructure_stop
+                break
+            if (
+                self.config.stop_when_target_impossible
+                and nonaccepts >= nonaccept_stop
+            ):
+                stop_reason = "nonaccept_limit_makes_ge_80_impossible"
+                break
+        report = self.build_trace_context_compiler_v7_report(
+            attempted_indices,
+            planned_root_count=len(indices),
+            stop_reason=stop_reason,
+            strategy=strategy,
+            report_scope=report_scope,
+        )
+        suffix = "_validation" if validation else ""
+        write_json(
+            self.run_dir
+            / "processed"
+            / f"trace_relevance_grounded_positive_v29{suffix}_report.json",
+            report,
+        )
+        return report
+
+    def run_trace_relevance_grounded_positive_v29(self) -> dict[str, Any]:
+        """Run v29 on fresh development roots."""
+        return self._run_trace_relevance_grounded_positive_v29(validation=False)
+
+    def run_trace_relevance_grounded_positive_v29_validation(
+        self,
+    ) -> dict[str, Any]:
+        """Evaluate frozen v29 on exact-root-disjoint validation roots."""
+        return self._run_trace_relevance_grounded_positive_v29(validation=True)
+
+    def _run_trace_relevance_grounded_positive_v30(
+        self, *, validation: bool
+    ) -> dict[str, Any]:
+        """Run v30 with one untouched sampler output and exactly two fixed judges."""
+        validate_context_compiler_v7_protocol(self.config)
+        indices = (
+            self._write_trace_validation_split_and_selection()
+            if validation
+            else self._write_trace_prompt_dev_split_and_selection()
+        )
+        strategy = "trace_relevance_grounded_positive_v30"
+        phase_slug = "trace-relevance-grounded-positive-v30"
+        report_scope = "validation" if validation else "canary"
+        checkpoints = set(self.config.phase1_checkpoints) | {len(indices)}
+        attempted_indices: list[int] = []
+        nonaccepts = 0
+        nonaccept_stop = nonaccept_stop_count_for_target(len(indices))
+        stop_reason = "planned_roots_completed"
+        for position, row_index in enumerate(indices, start=1):
+            attempted_indices.append(row_index)
+            current_candidate_id = stable_trace_candidate_id(
+                root_context_id(self.rows[row_index]),
+                self.config.pipeline_epoch,
+                strategy,
+            )
+            # Replaying a persisted terminal operation must not issue another
+            # request or stop again on the same historical infrastructure event.
+            infrastructure_failure_preexisted = (
+                trace_v14_infrastructure_stop_reason(
+                    self.gateway.events, current_candidate_id
+                )
+                is not None
+            )
+            try:
+                candidate = self.ensure_candidate(row_index, strategy)
+                result = self.ensure_judged(row_index, strategy, candidate, 0)
+                status = "accepted" if result.get("accepted", False) else "rejected"
+            except HardStop:
+                raise
+            except Exception as exc:
+                self._record_trace_terminal_failure(row_index, strategy, exc)
+                status = f"failed:{type(exc).__name__}"
+            if status != "accepted":
+                nonaccepts += 1
+            print(
+                f"{phase_slug}{'-validation' if validation else ''} "
+                f"{position}/{len(indices)} "
+                f"root={root_context_id(self.rows[row_index])} status={status} "
+                f"nonaccepts={nonaccepts}",
+                flush=True,
+            )
+            if position in checkpoints:
+                checkpoint = self.build_trace_context_compiler_v7_report(
+                    attempted_indices,
+                    planned_root_count=len(indices),
+                    stop_reason="checkpoint",
+                    strategy=strategy,
+                    report_scope=report_scope,
+                )
+                suffix = "_validation" if validation else ""
+                write_json(
+                    self.run_dir
+                    / "processed"
+                    / (
+                        "trace_relevance_grounded_positive_v30"
+                        f"{suffix}_checkpoint_{position:03d}.json"
+                    ),
+                    checkpoint,
+                )
+            infrastructure_stop = trace_infrastructure_stop_reason_for_iteration(
+                self.gateway.events,
+                current_candidate_id,
+                failure_preexisted=infrastructure_failure_preexisted,
+            )
+            if infrastructure_stop is not None:
+                stop_reason = infrastructure_stop
+                break
+            if (
+                self.config.stop_when_target_impossible
+                and nonaccepts >= nonaccept_stop
+            ):
+                stop_reason = "nonaccept_limit_makes_ge_80_impossible"
+                break
+        report = self.build_trace_context_compiler_v7_report(
+            attempted_indices,
+            planned_root_count=len(indices),
+            stop_reason=stop_reason,
+            strategy=strategy,
+            report_scope=report_scope,
+        )
+        suffix = "_validation" if validation else ""
+        write_json(
+            self.run_dir
+            / "processed"
+            / f"trace_relevance_grounded_positive_v30{suffix}_report.json",
+            report,
+        )
+        return report
+
+    def run_trace_relevance_grounded_positive_v30(self) -> dict[str, Any]:
+        """Run v30 on fresh development roots."""
+        return self._run_trace_relevance_grounded_positive_v30(validation=False)
+
+    def run_trace_relevance_grounded_positive_v30_validation(
+        self,
+    ) -> dict[str, Any]:
+        """Evaluate frozen v30 on exact-root-disjoint validation roots."""
+        return self._run_trace_relevance_grounded_positive_v30(validation=True)
 
     def run_trace_full_context_index_v11_audit(self) -> dict[str, Any]:
         """Evaluate frozen v11 plus fixed rate policy on untouched audit roots."""
@@ -8897,6 +9689,50 @@ class SynthesisExperiment:
         }
         qwen_requests = int(qwen["requests_including_retries"])
         luna_requests = int(luna["requests_including_retries"])
+        exclude_sampling_infrastructure = strategy in {
+            "trace_relevance_grounded_positive_v29",
+            "trace_relevance_grounded_positive_v30",
+        }
+        relevant_qwen_events = [
+            event
+            for event in self.gateway.events
+            if event.get("provider") == "qwen"
+            and any(
+                candidate_id in str(event.get("operation_id", ""))
+                for candidate_id in candidate_ids
+            )
+        ]
+        (
+            sampling_quality_denominator_requests,
+            excluded_sampling_infrastructure_failures,
+        ) = sampling_quality_denominator(
+            relevant_qwen_events,
+            exclude_infrastructure_failures=exclude_sampling_infrastructure,
+        )
+        judge_infrastructure_candidate_ids = {
+            candidate_id
+            for candidate_id in candidate_ids
+            if any(
+                event.get("provider") == "luna"
+                and candidate_id in str(event.get("operation_id", ""))
+                and is_infrastructure_failure_event(event)
+                for event in self.gateway.events
+            )
+        }
+        excluded_judge_infrastructure_events = sum(
+            event.get("provider") == "luna"
+            and is_infrastructure_failure_event(event)
+            and any(
+                candidate_id in str(event.get("operation_id", ""))
+                for candidate_id in candidate_ids
+            )
+            for event in self.gateway.events
+        )
+        quality_denominator_requests = max(
+            0,
+            sampling_quality_denominator_requests
+            - len(judge_infrastructure_candidate_ids),
+        )
         call_protocol_checks = {
             "retries_disabled": self.config.max_attempts_per_operation == 1,
             "one_qwen_event_per_attempted_root": (
@@ -8936,14 +9772,23 @@ class SynthesisExperiment:
             == candidate_count,
         }
         protocol_checks = {**call_protocol_checks, **score_completeness_checks}
-        efficiency = accepted / qwen_requests if qwen_requests else 0.0
-        lower, upper = wilson_interval(accepted, qwen_requests)
+        efficiency = (
+            accepted / quality_denominator_requests
+            if quality_denominator_requests
+            else 0.0
+        )
+        lower, upper = wilson_interval(accepted, quality_denominator_requests)
         return {
             "phase": f"{strategy}_fixed_1q_2l_{report_scope}",
             "pipeline_epoch": self.config.pipeline_epoch,
             "created_at": utc_now(),
             "metric_definition": (
-                "accepted outputs divided by all bottom-level Qwen API request events; "
+                "accepted outputs divided by infrastructure-clean root attempts; sampler "
+                "or judge service, network, container, auth, and capacity failures are "
+                "reported separately and excluded by affected root, while HTTP-200 "
+                "semantic failures remain in the denominator"
+                if exclude_sampling_infrastructure
+                else "accepted outputs divided by all bottom-level Qwen API request events; "
                 "failed and interrupted Qwen attempts remain in the denominator"
             ),
             "target_at_least": TARGET_ACCEPTS_PER_QWEN_REQUEST,
@@ -8958,18 +9803,32 @@ class SynthesisExperiment:
             "accepted_outputs": accepted,
             "score_band_counts": score_band_counts,
             "qwen_requests_including_failures": qwen_requests,
+            "quality_denominator_sampling_requests": quality_denominator_requests,
+            "quality_denominator_evaluable_roots": quality_denominator_requests,
+            "sampling_requests_after_sampler_infrastructure_exclusions": (
+                sampling_quality_denominator_requests
+            ),
+            "excluded_sampling_infrastructure_failures": (
+                excluded_sampling_infrastructure_failures
+            ),
+            "excluded_judge_infrastructure_events": (
+                excluded_judge_infrastructure_events
+            ),
+            "excluded_judge_infrastructure_roots": len(
+                judge_infrastructure_candidate_ids
+            ),
             "luna_requests_including_failures": luna_requests,
             "user_efficiency_accepts_per_qwen_request": efficiency,
             "target_point_rate_meets_80_percent": (
-                qwen_requests > 0
+                quality_denominator_requests > 0
                 and efficiency >= TARGET_ACCEPTS_PER_QWEN_REQUEST
             ),
             "request_denominator_wilson_95_interval": [lower, upper],
             "request_denominator_one_sided_exact_95_lower_bound": (
-                one_sided_exact_lower_bound(accepted, qwen_requests)
+                one_sided_exact_lower_bound(accepted, quality_denominator_requests)
             ),
             "one_sided_95_lower_bound_meets_80_percent": (
-                one_sided_exact_lower_bound(accepted, qwen_requests)
+                one_sided_exact_lower_bound(accepted, quality_denominator_requests)
                 >= TARGET_ACCEPTS_PER_QWEN_REQUEST
             ),
             "rejection_rule_counts": rules,

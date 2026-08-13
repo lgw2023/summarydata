@@ -1,0 +1,180 @@
+{
+  "schema_version": "summary-synthesis-v30-repaired-comparison-v1",
+  "created_at": "2026-08-13T12:31:20.552141+00:00",
+  "source_sha256": "b4c70205099f1a9e54f433830c8e006479290caa645adfc591f63a5f5779293a",
+  "selection_sha256": "72f71f0ffbd878c876bc569f065334ec8f44024dcc21473069291b05dbf98caa",
+  "protocol": {
+    "same_frozen_exact_root_disjoint_sample_count": 50,
+    "clean_attempt_per_final_root": "one sampler call plus exactly two fixed Luna calls after a successful generation",
+    "repair_policy": "replace the entire root attempt after sampler or judge infrastructure failure; preserve original attempts for physical-usage audit",
+    "acceptance": "score >= 14 or 0 < score <= 8",
+    "concurrency": 1
+  },
+  "models": {
+    "opencode-go/qwen3.7-plus": {
+      "valid_root_samples": 50,
+      "accepted": 42,
+      "accept_rate": 0.84,
+      "score_bands": {
+        "positive": 41,
+        "negative": 1,
+        "ambiguous": 5,
+        "unusable_zero": 3
+      },
+      "unscored_http_200_semantic_sampler_failures": 0,
+      "wilson_95_interval": [
+        0.7148578393696501,
+        0.916625793219666
+      ],
+      "one_sided_exact_95_lower_bound": 0.729779922473587,
+      "point_target_met": true,
+      "one_sided_95_lower_bound_target_met": false,
+      "quality_eligible_calls": {
+        "sampler": 50,
+        "judge": 100
+      },
+      "physical_calls_including_replaced_infrastructure_affected_attempts": {
+        "sampler": 50,
+        "judge": 100
+      },
+      "replaced_infrastructure_affected_roots": 0,
+      "original_judge_infrastructure_failure_events": 0,
+      "base_run": "data/summary_train_v3_trace_relevance_grounded_positive_v30_qwen37plus_validation50_20260813_01",
+      "repair_runs": []
+    },
+    "opencode-go/deepseek-v4-flash": {
+      "valid_root_samples": 50,
+      "accepted": 45,
+      "accept_rate": 0.9,
+      "score_bands": {
+        "positive": 43,
+        "negative": 2,
+        "ambiguous": 1,
+        "unusable_zero": 4
+      },
+      "unscored_http_200_semantic_sampler_failures": 0,
+      "wilson_95_interval": [
+        0.7863976856252035,
+        0.9565242350681096
+      ],
+      "one_sided_exact_95_lower_bound": 0.8011669974835809,
+      "point_target_met": true,
+      "one_sided_95_lower_bound_target_met": true,
+      "quality_eligible_calls": {
+        "sampler": 50,
+        "judge": 100
+      },
+      "physical_calls_including_replaced_infrastructure_affected_attempts": {
+        "sampler": 50,
+        "judge": 100
+      },
+      "replaced_infrastructure_affected_roots": 0,
+      "original_judge_infrastructure_failure_events": 0,
+      "base_run": "data/summary_train_v3_trace_relevance_grounded_positive_v30_deepseekv4flash_validation50_20260813_01",
+      "repair_runs": []
+    },
+    "opencode-go/mimo-v2.5": {
+      "valid_root_samples": 50,
+      "accepted": 40,
+      "accept_rate": 0.8,
+      "score_bands": {
+        "positive": 37,
+        "negative": 3,
+        "ambiguous": 4,
+        "unusable_zero": 5
+      },
+      "unscored_http_200_semantic_sampler_failures": 1,
+      "wilson_95_interval": [
+        0.6696289406777459,
+        0.887562499842239
+      ],
+      "one_sided_exact_95_lower_bound": 0.6844039385799854,
+      "point_target_met": true,
+      "one_sided_95_lower_bound_target_met": false,
+      "quality_eligible_calls": {
+        "sampler": 50,
+        "judge": 98
+      },
+      "physical_calls_including_replaced_infrastructure_affected_attempts": {
+        "sampler": 50,
+        "judge": 98
+      },
+      "replaced_infrastructure_affected_roots": 0,
+      "original_judge_infrastructure_failure_events": 0,
+      "base_run": "data/summary_train_v3_trace_relevance_grounded_positive_v30_mimov25_validation50_20260813_01",
+      "repair_runs": []
+    },
+    "opencode-go/kimi-k2.6": {
+      "valid_root_samples": 50,
+      "accepted": 42,
+      "accept_rate": 0.84,
+      "score_bands": {
+        "positive": 41,
+        "negative": 1,
+        "ambiguous": 6,
+        "unusable_zero": 2
+      },
+      "unscored_http_200_semantic_sampler_failures": 0,
+      "wilson_95_interval": [
+        0.7148578393696501,
+        0.916625793219666
+      ],
+      "one_sided_exact_95_lower_bound": 0.729779922473587,
+      "point_target_met": true,
+      "one_sided_95_lower_bound_target_met": false,
+      "quality_eligible_calls": {
+        "sampler": 50,
+        "judge": 100
+      },
+      "physical_calls_including_replaced_infrastructure_affected_attempts": {
+        "sampler": 52,
+        "judge": 104
+      },
+      "replaced_infrastructure_affected_roots": 2,
+      "original_judge_infrastructure_failure_events": 2,
+      "base_run": "data/summary_train_v3_trace_relevance_grounded_positive_v30_kimik26_validation50_20260813_01",
+      "repair_runs": [
+        "data/summary_train_v3_trace_relevance_grounded_positive_v30_kimik26_validation50_repair1_20260813_01"
+      ]
+    },
+    "opencode-go/glm-5.2": {
+      "valid_root_samples": 50,
+      "accepted": 39,
+      "accept_rate": 0.78,
+      "score_bands": {
+        "positive": 38,
+        "negative": 1,
+        "ambiguous": 4,
+        "unusable_zero": 7
+      },
+      "unscored_http_200_semantic_sampler_failures": 0,
+      "wilson_95_interval": [
+        0.6475845041874634,
+        0.8724608402978559
+      ],
+      "one_sided_exact_95_lower_bound": 0.6622255149585814,
+      "point_target_met": false,
+      "one_sided_95_lower_bound_target_met": false,
+      "quality_eligible_calls": {
+        "sampler": 50,
+        "judge": 100
+      },
+      "physical_calls_including_replaced_infrastructure_affected_attempts": {
+        "sampler": 66,
+        "judge": 132
+      },
+      "replaced_infrastructure_affected_roots": 16,
+      "original_judge_infrastructure_failure_events": 21,
+      "base_run": "data/summary_train_v3_trace_relevance_grounded_positive_v30_glm52_validation50_20260813_01",
+      "repair_runs": [
+        "data/summary_train_v3_trace_relevance_grounded_positive_v30_glm52_validation50_repair1_20260813_01"
+      ]
+    }
+  },
+  "same_root_five_model_pool": {
+    "root_model_observations": 250,
+    "accepted": 208,
+    "accept_rate": 0.832,
+    "claim_boundary": "descriptive only because five outcomes on each root are correlated"
+  }
+}

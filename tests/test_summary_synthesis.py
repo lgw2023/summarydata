@@ -28,6 +28,8 @@ from src.experiments.summary_synthesis import (
     build_visual_contract_v14_messages,
     build_guarded_visual_contract_v21_messages,
     build_relevance_safe_direct_v24_messages,
+    build_relevance_grounded_positive_v29_messages,
+    build_relevance_grounded_positive_v30_messages,
     build_proof_carrying_v15_messages,
     build_evidence_compiler_v16_messages,
     build_grounded_composer_v17_messages,
@@ -44,6 +46,8 @@ from src.experiments.summary_synthesis import (
     build_context,
     apply_label_free_output_guard,
     apply_guarded_visual_contract_v21,
+    apply_relevance_grounded_guard_v29,
+    audit_relevance_grounded_guard_v30,
     render_controlled_negative_v22,
     render_complete_plaintext_negative_v23,
     render_full_answer_plaintext_negative_v24,
@@ -70,6 +74,8 @@ from src.experiments.summary_synthesis import (
     nonaccept_stop_count_for_target,
     classify_kto_score,
     is_kto_accepted_score,
+    is_infrastructure_failure_event,
+    is_sampling_infrastructure_failure_event,
     judge_response_format,
     one_sided_exact_lower_bound,
     parse_persisted_judge_event,
@@ -82,9 +88,11 @@ from src.experiments.summary_synthesis import (
     score_packed_contract_candidate_v20,
     root_context_id,
     score_judges,
+    sampling_quality_denominator,
     select_compare_indices,
     select_trace_phase1_indices,
     stable_candidate_id,
+    trace_infrastructure_stop_reason_for_iteration,
     trace_v14_infrastructure_stop_reason,
     validate_context_compiler_v7_protocol,
     validate_judge_output,
@@ -140,6 +148,111 @@ def test_frozen_confirmation_config_excludes_consumed_audit_roots() -> None:
     assert config.qwen_request_cap == 50
     assert config.luna_request_cap == 100
     assert config.audit_excluded_indices == (176, 254, 193, 44, 184)
+    assert config.stop_when_target_impossible is True
+
+
+def test_paired_model_confirmation_configs_complete_all_planned_roots() -> None:
+    for model_slug in ("qwen37plus", "deepseekv4flash"):
+        config = ExperimentConfig.from_yaml(
+            Path(
+                "configs/summary_train_v3_trace_relevance_safe_positive_v28_"
+                f"{model_slug}_confirm50_unthrottled.yaml"
+            )
+        )
+        assert config.phase1_count == 50
+        assert config.stop_when_target_impossible is False
+
+
+def test_v29_dev_config_is_single_call_fresh_root_canary() -> None:
+    config = ExperimentConfig.from_yaml(
+        Path(
+            "configs/summary_train_v3_trace_relevance_grounded_positive_v29_"
+            "qwen37plus_dev5.yaml"
+        )
+    )
+    assert config.phase1_count == 5
+    assert config.qwen_model == "opencode-go/qwen3.7-plus"
+    assert config.qwen_request_cap == 5
+    assert config.luna_request_cap == 10
+    assert config.max_attempts_per_operation == 1
+    assert config.judge_repeats == 1
+    assert config.validation_root_count == 50
+    assert config.audit_root_count == 95
+    assert set(config.phase1_excluded_indices) == set(
+        config.split_protected_indices
+    )
+    rows = load_source_rows(config)
+    splits = build_root_splits(
+        rows,
+        config.expected_source_sha256,
+        protected_development_indices=config.split_protected_indices,
+        validation_root_count=config.validation_root_count,
+        audit_root_count=config.audit_root_count,
+    )
+    selected = select_trace_phase1_indices(
+        rows,
+        config.expected_source_sha256,
+        development_indices=splits["development"],
+        excluded_indices=config.phase1_excluded_indices,
+        count=config.phase1_count,
+    )
+    consumed_roots = {
+        root_context_id(rows[index]) for index in config.phase1_excluded_indices
+    }
+    assert len(selected) == 5
+    assert all(
+        root_context_id(rows[index]) not in consumed_roots for index in selected
+    )
+
+
+def test_v30_paired_validation_configs_use_same_50_fresh_roots() -> None:
+    selections: list[list[int]] = []
+    for model_slug, model_name in (
+        ("qwen37plus", "opencode-go/qwen3.7-plus"),
+        ("deepseekv4flash", "opencode-go/deepseek-v4-flash"),
+    ):
+        config = ExperimentConfig.from_yaml(
+            Path(
+                "configs/summary_train_v3_trace_relevance_grounded_positive_v30_"
+                f"{model_slug}_validation50.yaml"
+            )
+        )
+        assert config.qwen_model == model_name
+        assert config.phase1_count == 50
+        assert config.qwen_request_cap == 50
+        assert config.luna_request_cap == 100
+        assert config.max_attempts_per_operation == 1
+        assert config.judge_repeats == 1
+        assert config.stop_when_target_impossible is False
+        assert config.validation_root_count == 50
+        assert config.audit_root_count == 0
+        assert len(config.split_protected_indices) == 350
+        validate_context_compiler_v7_protocol(config)
+
+        rows = load_source_rows(config)
+        splits = build_root_splits(
+            rows,
+            config.expected_source_sha256,
+            protected_development_indices=config.split_protected_indices,
+            validation_root_count=config.validation_root_count,
+            audit_root_count=config.audit_root_count,
+        )
+        selected = select_trace_phase1_indices(
+            rows,
+            config.expected_source_sha256,
+            development_indices=splits["validation"],
+            excluded_indices=config.validation_excluded_indices,
+            count=config.phase1_count,
+        )
+        protected_roots = {
+            root_context_id(rows[index])
+            for index in config.split_protected_indices
+        }
+        selected_roots = {root_context_id(rows[index]) for index in selected}
+        assert len(selected) == len(selected_roots) == 50
+        assert selected_roots.isdisjoint(protected_roots)
+        selections.append(selected)
+    assert selections[0] == selections[1]
 
 
 def test_selection_is_deterministic_and_keeps_required_rows() -> None:
@@ -415,6 +528,156 @@ def test_v21_prompt_freezes_one_shot_source_and_safety_policy() -> None:
     assert "v21 保守完成策略" in messages[0]["content"]
     assert "专家建议原文" in messages[0]["content"]
     assert "最终门禁" in messages[1]["content"]
+
+
+def test_v29_prompt_combines_relevance_with_zero_score_guards() -> None:
+    messages = build_relevance_grounded_positive_v29_messages(
+        {"query": "合成问题", "data": "合成记录", "domain": "其他"}
+    )
+    assert len(messages) == 2
+    system = messages[0]["content"]
+    assert "只有一次生成机会" in system
+    assert "不得声称已经完成" in system
+    assert "同一条明确证据" in system
+    assert "默认禁止新增派生计算" in system
+    assert "整个区间正常" in system
+    assert "<完整课程名>" in system
+    assert "不得引入 macOS" in system
+
+
+def test_v29_guard_rewrites_deferred_alarm_agent_output() -> None:
+    row = {"query": "定一个早上 6 点的闹钟", "data": "", "domain": "其他"}
+    response = (
+        "我会先规划 macOS 的闹钟实现。请确认使用哪个应用，"
+        "确认后我会给出命令行方案。"
+    )
+    rendered, stats = apply_relevance_grounded_guard_v29(row, response)
+    assert "无法直接操作你的设备" in rendered
+    assert "闹钟或提醒应用" in rendered
+    assert "macOS" not in rendered
+    assert "确认后" not in rendered
+    assert stats["v29_device_completion_rewritten"] == 1
+    assert stats["v29_local_gate_failed"] == 0
+
+
+def test_v29_guard_removes_unsupported_numeric_course_and_environment_lines() -> None:
+    row = {
+        "query": "请简要分析合成记录并推荐课程",
+        "data": "第一条合成记录为10步，第二条为12步。",
+        "suggest": "保持原始记录。",
+        "services": "合成步行课程",
+        "domain": "其他",
+    }
+    response = """可以先核对两条原始记录。
+
+1. 平均值是11步。
+2. 保持原始记录。
+3. 推荐课程 <不存在课程>。
+4. 可以在 macOS 终端运行脚本。
+"""
+    rendered, stats = apply_relevance_grounded_guard_v29(row, response)
+    assert "可以先核对" in rendered
+    assert "保持原始记录" in rendered
+    assert "11步" not in rendered
+    assert "不存在课程" not in rendered
+    assert "macOS" not in rendered
+    assert stats["v29_unsupported_numeric_lines_removed"] == 1
+    assert stats["v29_unsupported_course_lines_removed"] == 1
+    assert stats["v29_environment_lines_removed"] == 1
+
+
+def test_v29_guard_accepts_only_verified_explicit_simple_arithmetic() -> None:
+    row = {
+        "query": "请计算两条合成记录的差值",
+        "data": "第一条是10，第二条是12。",
+        "domain": "其他",
+    }
+    verified, verified_stats = apply_relevance_grounded_guard_v29(
+        row, "计算式：12 - 10 = 2。"
+    )
+    wrong, wrong_stats = apply_relevance_grounded_guard_v29(
+        row, "计算式：12 - 10 = 3。"
+    )
+    assert "= 2" in verified
+    assert verified_stats["v29_unsupported_numeric_lines_removed"] == 0
+    assert "= 3" not in wrong
+    assert wrong_stats["v29_unsupported_numeric_lines_removed"] == 1
+    assert wrong_stats["v29_safe_fallback_used"] == 1
+
+    cross_source_row = {
+        "query": "请计算两条合成材料的差值",
+        "data": "个人记录是10。",
+        "suggest": "专家材料中的参考值是12。",
+        "domain": "其他",
+    }
+    cross_source, cross_source_stats = apply_relevance_grounded_guard_v29(
+        cross_source_row, "计算式：12 - 10 = 2。"
+    )
+    assert "= 2" not in cross_source
+    assert cross_source_stats["v29_unsupported_numeric_lines_removed"] == 1
+
+
+def test_v29_guard_drops_personal_generalization_from_single_record() -> None:
+    row = {
+        "query": "请分析合成记录",
+        "data": "周一的合成步数为8000步。",
+        "domain": "其他",
+    }
+    rendered, stats = apply_relevance_grounded_guard_v29(
+        row, "你每天的合成步数都是8000步。"
+    )
+    assert "每天" not in rendered
+    assert stats["v29_personal_mismatch_lines_removed"] == 1
+
+
+def test_v29_guard_drops_unsupported_sweeping_range_claim() -> None:
+    row = {
+        "query": "这些合成记录是否正常？",
+        "data": "合成区间为10到20，参考区间为12到18。",
+        "domain": "其他",
+    }
+    rendered, stats = apply_relevance_grounded_guard_v29(
+        row, "这些记录全部正常。"
+    )
+    assert "全部正常" not in rendered
+    assert stats["v29_sweeping_range_lines_removed"] == 1
+    assert stats["v29_safe_fallback_used"] == 1
+
+
+def test_v30_prompt_restores_complete_markdown_without_destructive_self_check() -> None:
+    messages = build_relevance_grounded_positive_v30_messages(
+        {"query": "合成问题", "data": "合成记录", "domain": "其他"}
+    )
+    assert len(messages) == 2
+    system = messages[0]["content"]
+    assert "无状态的中文对话助手" in system
+    assert "不是规划软件工程任务" in system
+    assert "直接结论 + 必要依据或说明 + 与问题相关的下一步" in system
+    assert "至少一个有信息量的 `##` 小标题" in system
+    assert "不要删除承载核心回答的整句或整段" in system
+    assert "不要把完整回答替换成固定兜底句" in system
+
+
+def test_v30_guard_is_audit_only_and_preserves_problematic_text_byte_for_byte() -> None:
+    row = {
+        "query": "请分析合成记录并推荐课程",
+        "data": "单日合成记录为10步。",
+        "services": "合成步行课程",
+        "domain": "其他",
+    }
+    response = (
+        "## 结论\r\n\r\n"
+        "你每天都是11步，并可在 macOS 终端处理。\r\n\r\n"
+        "- 推荐课程 <不存在课程>。"
+    )
+    rendered, stats = audit_relevance_grounded_guard_v30(row, response)
+    assert rendered == response
+    assert stats["v30_audit_only"] == 1
+    assert stats["v30_response_modified"] == 0
+    assert stats["v30_hypothetical_v29_changed"] == 1
+    assert stats["v30_audit_flag_total"] > 0
+    assert stats["v30_markdown_headings"] == 1
+    assert stats["v30_markdown_list_items"] == 1
 
 
 def test_v22_controlled_negative_is_grounded_complete_and_has_no_markdown() -> None:
@@ -1157,6 +1420,104 @@ def test_trace_v14_stops_before_next_qwen_on_known_infrastructure_failure() -> N
     )
 
 
+def test_v30_resume_does_not_stop_twice_on_persisted_infrastructure_failure() -> None:
+    candidate_id = "synthetic-candidate"
+    events = [
+        {
+            "provider": "luna",
+            "operation_id": f"judge:{candidate_id}:0:ground",
+            "status": "failed",
+            "gateway_error": {"message": "Selected model is at capacity."},
+        }
+    ]
+    assert trace_infrastructure_stop_reason_for_iteration(
+        events, candidate_id, failure_preexisted=False
+    ) == "luna_model_capacity"
+    assert (
+        trace_infrastructure_stop_reason_for_iteration(
+            events, candidate_id, failure_preexisted=True
+        )
+        is None
+    )
+
+
+def test_trace_stops_on_non_capacity_judge_infrastructure_failure() -> None:
+    candidate_id = "synthetic-candidate"
+    assert trace_v14_infrastructure_stop_reason(
+        [
+            {
+                "provider": "luna",
+                "operation_id": f"judge:{candidate_id}:0:ground",
+                "status": "failed",
+                "http_status": 502,
+                "gateway_error": {"message": "refresh token was revoked"},
+            }
+        ],
+        candidate_id,
+    ) == "luna_infrastructure_failure"
+
+
+def test_only_opencode_unreachable_is_excluded_from_sampler_quality_denominator() -> None:
+    unreachable = {
+        "provider": "qwen",
+        "status": "failed",
+        "gateway_error": {"code": "opencode_unreachable"},
+    }
+    semantic_failure = {
+        "provider": "qwen",
+        "status": "failed",
+        "gateway_error": {"code": "semantic_generation_failure"},
+    }
+    assert is_sampling_infrastructure_failure_event(unreachable)
+    assert not is_sampling_infrastructure_failure_event(
+        {
+            "provider": "qwen",
+            "status": "ok",
+            "gateway_error": {"code": "opencode_unreachable"},
+        }
+    )
+    assert not is_sampling_infrastructure_failure_event(semantic_failure)
+    quality_calls, excluded = sampling_quality_denominator(
+        [unreachable, semantic_failure],
+        exclude_infrastructure_failures=True,
+    )
+    assert (quality_calls, excluded) == (1, 1)
+    all_calls, excluded = sampling_quality_denominator(
+        [unreachable, semantic_failure],
+        exclude_infrastructure_failures=False,
+    )
+    assert (all_calls, excluded) == (2, 0)
+
+
+def test_service_network_container_and_capacity_failures_are_infrastructure() -> None:
+    failures = [
+        {"provider": "luna", "status": "failed", "http_status": 502},
+        {
+            "provider": "luna",
+            "status": "failed",
+            "http_status": 429,
+            "gateway_error": {"message": "Selected model is at capacity."},
+        },
+        {
+            "provider": "qwen",
+            "status": "failed",
+            "failure_class": "ConnectError",
+        },
+        {
+            "provider": "luna",
+            "status": "failed",
+            "gateway_error": {"message": "refresh token was revoked"},
+        },
+    ]
+    assert all(is_infrastructure_failure_event(event) for event in failures)
+    assert not is_infrastructure_failure_event(
+        {"provider": "qwen", "status": "failed", "http_status": 200}
+    )
+    assert not is_infrastructure_failure_event(
+        {"provider": "luna", "status": "ok", "http_status": 200}
+    )
+
+
 def test_conservative_renderer_drops_generated_numeric_interpretation() -> None:
     row = {
         "query": "redacted",
@@ -1324,6 +1685,44 @@ def test_context_compiler_v8_protocol_is_exposed_by_cli(monkeypatch) -> None:
         "sys.argv", ["runner", "--phase", "trace-context-compiler-v8"]
     )
     assert parse_args().phase == "trace-context-compiler-v8"
+
+
+def test_relevance_grounded_positive_v29_protocol_is_exposed_by_cli(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv", ["runner", "--phase", "trace-relevance-grounded-positive-v29"]
+    )
+    assert parse_args().phase == "trace-relevance-grounded-positive-v29"
+
+
+def test_relevance_grounded_positive_v29_validation_is_exposed_by_cli(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        ["runner", "--phase", "trace-relevance-grounded-positive-v29-validation"],
+    )
+    assert parse_args().phase == "trace-relevance-grounded-positive-v29-validation"
+
+
+def test_relevance_grounded_positive_v30_protocol_is_exposed_by_cli(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv", ["runner", "--phase", "trace-relevance-grounded-positive-v30"]
+    )
+    assert parse_args().phase == "trace-relevance-grounded-positive-v30"
+
+
+def test_relevance_grounded_positive_v30_validation_is_exposed_by_cli(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        ["runner", "--phase", "trace-relevance-grounded-positive-v30-validation"],
+    )
+    assert parse_args().phase == "trace-relevance-grounded-positive-v30-validation"
 
 
 def test_silent_jury_v9_protocol_is_exposed_by_cli(monkeypatch) -> None:
